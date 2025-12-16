@@ -1,7 +1,7 @@
 #Encoding: UTF-8
 # ==============================================================================
 # ملف: main_loader.rb
-# (النسخة النهائية: تطبيق خطة الفصل الذكي + التعامل مع Redirection)
+# (النسخة النهائية: تطبيق خطة الفصل الذكي + تبسيط كود التحميل الآمن)
 # ==============================================================================
 
 require 'sketchup.rb'
@@ -246,7 +246,7 @@ module ClickAndCut
       end
     end
     
-    # 4.1. 🔥 دالة التحميل الفعلي الصامت (بمتابعة التحويلات) 🔥
+    # 4.1. 🔥 دالة التحميل الفعلي الصامت (الكود المُبسط والآمن) 🔥
     def self.run_background_download(files_list)
         folder_path = File.dirname(__FILE__)
         
@@ -262,42 +262,40 @@ module ClickAndCut
                 next unless url_str.start_with?('http')
                 target_file = File.join(folder_path, "#{file_name}.new") 
                 
-                # --- كود التحميل الآمن مع متابعة التحويل (Redirection) ---
-                max_redirects = 5
-                current_url = url_str
+                # --- كود التحميل المُبسط والآمن (مع زيادة المهلة) ---
+                uri = URI(url_str)
+                http = Net::HTTP.new(uri.host, uri.port)
+                http.use_ssl = true
+                http.verify_mode = OpenSSL::SSL::VERIFY_NONE 
+                http.open_timeout = 15 # زيادة المهلة
+                http.read_timeout = 45 # زيادة مهلة القراءة
                 
-                loop do
-                    uri = URI(current_url)
-                    http = Net::HTTP.new(uri.host, uri.port)
-                    http.use_ssl = true
-                    http.verify_mode = OpenSSL::SSL::VERIFY_NONE 
-                    http.open_timeout = 10 # زيادة المهلة
-                    http.read_timeout = 30 # زيادة مهلة القراءة
-                    
-                    request = Net::HTTP::Get.new(uri.request_uri)
-                    response = http.request(request)
-                    
-                    if response.is_a?(Net::HTTPRedirection)
-                        max_redirects -= 1
-                        raise "تجاوز الحد الأقصى للتحويلات" if max_redirects < 0
-                        current_url = response['location']
-                        next
-                    end
-                    
-                    # التحقق من الاستجابة النهائية
-                    if response.code == "200"
-                        content = response.body
-                        if content.include?("<!DOCTYPE html>")
-                            raise "الرابط يحتوي على صفحة ويب خطأ"
-                        end
-                        
-                        File.open(target_file, "wb") { |f| f.write(content) }
-                        break # تم التحميل بنجاح
-                    else
-                        raise "خطأ سيرفر: #{response.code}"
-                    end
+                # السماح بالتحويل التلقائي لمرة واحدة على الأقل
+                request = Net::HTTP::Get.new(uri.request_uri)
+                response = http.request(request)
+                
+                # محاولة التحويل لمرة واحدة فقط (لأن الأكواد المعقدة تفشل في SketchUp)
+                if response.is_a?(Net::HTTPRedirection)
+                    redirect_uri = URI(response['location'])
+                    http_redirect = Net::HTTP.new(redirect_uri.host, redirect_uri.port)
+                    http_redirect.use_ssl = true
+                    http_redirect.verify_mode = OpenSSL::SSL::VERIFY_NONE
+                    response = http_redirect.request(Net::HTTP::Get.new(redirect_uri.request_uri))
                 end
-                # --- نهاية كود التحميل الآمن ---
+
+                # التحقق من الاستجابة النهائية
+                if response.code == "200"
+                    content = response.body
+                    if content.include?("<!DOCTYPE html>")
+                        # هذا هو الخطأ الذي ظهر معك (الرابط يحتوي على صفحة ويب)
+                        raise "الرابط يحتوي على صفحة ويب خطأ"
+                    end
+                    
+                    File.open(target_file, "wb") { |f| f.write(content) }
+                else
+                    raise "خطأ سيرفر: #{response.code}"
+                end
+                # --- نهاية كود التحميل المُبسط والآمن ---
 
             rescue => e
                 @@download_status = { status: :error, error: "الملف: #{file_name} - الخطأ: #{e.message.gsub("'", "")}" }
@@ -325,7 +323,6 @@ module ClickAndCut
             dlg.execute_script("showError('#{status[:error].gsub("'", "\\'")}')")
 
         elsif status[:status] == :progress
-            # لتجنب تحديث الحالة بنفس البيانات بشكل متكرر
             if status[:count] > 0
                 msg = "جاري تحميل ملف #{status[:count]} من #{status[:total]}..."
                 dlg.execute_script("updateStatus('#{msg}', '#{status[:file].gsub("'", "\\'")}')")
