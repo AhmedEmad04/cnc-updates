@@ -1,6 +1,6 @@
 #Encoding: UTF-8
 # ==============================================================================
-# ملف: main_loader.rb (تم إصلاح زر التحديث)
+# ملف: main_loader.rb (تم الإصلاح - النسخة الكاملة)
 # ==============================================================================
 
 require 'sketchup.rb'
@@ -21,74 +21,76 @@ module ClickAndCut
   # 1. تعريف رقم الإصدار الحالي
   CURRENT_VERSION = "2.0.0" 
   
-  # رابط API
-  UPDATE_API_URL = "https://raw.githubusercontent.com/AhmedEmad04/cnc-updates/93db76db3e993ae0b5ced7e206f3eb561e229f23/version.json"
+  # رابط التحديث (يشير إلى main)
+  UPDATE_API_URL = "https://raw.githubusercontent.com/AhmedEmad04/cnc-updates/main/version.json"
 
-  # 2. بصمة ملف الواجهة
+  # 2. بصمة ملف الواجهة (تأكد من تحديثها لو غيرت ملف HTML)
   UI_HASH = "0b161acf3e2aee885f86bd4799d773b156b2767dcbc83634848136382214c282"
 
   # ==========================================================================
-  # 🔄 وحدة التحديث (Updater Module) - (بواجهة احترافية + إصلاح الزر)
+  # 🔄 وحدة التحديث (Updater Module)
   # ==========================================================================
   module Updater
-
     API_URL = ClickAndCut::UPDATE_API_URL 
     @@restart_required = false
     @@server_data = nil
 
+    # الدالة اللي كانت ناقصة ورجعناها عشان الكود ما يضربش
     def self.is_restart_required?
       @@restart_required
     end
 
-    # دالة الفحص (تقوم بتحديث البيانات وتُرجع هل يوجد تحديث أم لا)
+    # دالة الفحص (تم التأكد من عملها)
     def self.check_for_update_availability
       begin
         uri = URI(API_URL)
-        # إضافة رقم عشوائي لمنع الكاش نهائياً
-        uri.query = URI.encode_www_form({:nocache => Time.now.to_i, :rand => rand(1000)})
+        # كود عشوائي لمنع الكاش
+        uri.query = URI.encode_www_form({:nocache => Time.now.to_i, :rand => rand(9999)})
         
         response = Net::HTTP.get(uri)
+        return false if response.nil? || response.empty?
+
         data = JSON.parse(response)
-        @@server_data = data # تحديث البيانات
+        @@server_data = data 
 
         server_ver = data["version"].to_s.strip
         local_ver = ClickAndCut::CURRENT_VERSION.to_s.strip
 
+        # طباعة للتشخيص
+        puts "------------------------------------------------"
+        puts "🔍 [Debug] Checking Update..."
+        puts "🌍 Server Version: #{server_ver}"
+        puts "💻 Local Version:  #{local_ver}"
+        puts "------------------------------------------------"
+
         return (server_ver > local_ver)
       rescue => e
-        puts "ClickAndCut Update Error: #{e.message}"
+        puts "❌ Update Error: #{e.message}"
         return false
       end
     end
 
-    # 🔥 دالة جديدة: الفحص اليدوي عند ضغط الزر
+    # دالة الفحص اليدوي (زر التحديث)
     def self.manual_check_ui
-      # 1. إظهار رسالة صغيرة في الشريط السفلي
       Sketchup.set_status_text("جاري التحقق من التحديثات...")
-      
-      # 2. إجبار الفحص الآن
       has_update = self.check_for_update_availability
-      
-      Sketchup.set_status_text("") # مسح الرسالة
+      Sketchup.set_status_text("") 
 
       if has_update
-        # لو فيه تحديث، افتح النافذة الشيك
         self.show_update_dialog
       else
-        # لو مفيش، طلع رسالة عشان المستخدم يعرف إن الزرار شغال
         ver = ClickAndCut::CURRENT_VERSION
         UI.messagebox("✅ نسختك محدثة بالفعل!\n\nالإصدار الحالي: #{ver}\nلا توجد تحديثات جديدة متاحة حالياً.", MB_OK)
       end
     end
 
-    # عرض نافذة التحديث الاحترافية
+    # عرض نافذة التحديث
     def self.show_update_dialog
-      # لو البيانات مش موجودة (لأي سبب)، نحاول نجيبها تاني
       unless @@server_data
          self.check_for_update_availability
       end
       
-      return unless @@server_data # لو فشل الاتصال خالص نخرج
+      return unless @@server_data 
 
       server_ver = @@server_data["version"]
       update_msg = @@server_data["message"] || "تحسينات عامة."
@@ -157,7 +159,6 @@ module ClickAndCut
       folder_path = File.dirname(__FILE__)
       success_count = 0
       
-      # نستخدم Thread عشان الواجهة متهنجش أثناء التحميل
       Thread.new do
         files_list.each do |file_info|
           file_name = file_info["name"].to_s
@@ -429,8 +430,13 @@ module ClickAndCut
           ClickAndCut::Protection.show_license_info
         else
           
-          # فحص التحديثات الصامت
-          has_update = ClickAndCut::Updater.check_for_update_availability
+          # 🔥 إصلاح هام: وضعنا الفحص داخل rescue عشان لو النت قاطع البلاجن يفتح
+          has_update = false
+          begin
+             has_update = ClickAndCut::Updater.check_for_update_availability
+          rescue
+             has_update = false
+          end
 
           if ClickAndCut::Updater.is_restart_required?
              UI.messagebox("⚠️ تنبيه هام ⚠️\n\nتم تحميل تحديثات جديدة.\nيجب إغلاق SketchUp تماماً وإعادة تشغيله.", MB_OK)
@@ -466,7 +472,6 @@ module ClickAndCut
                    self.send_subfolders_to_sidebar(dlg, "") 
                    show_news_dot = ClickAndCut::Community.check_notification_status
                    dlg.execute_script("showCommunityNotification(#{show_news_dot});") 
-                   # هنا فقط بنعرض النقطة الحمراء لو فيه تحديث، مش بنفتح النافذة
                    dlg.execute_script("showUpdateNotification(#{has_update});")
                end
 
@@ -475,14 +480,11 @@ module ClickAndCut
                    dlg.execute_script("showCommunityNotification(false);") 
                end
 
-               # 🔥🔥 التعديل المهم جداً هنا 🔥🔥
-               # لما المستخدم يدوس، بننادي على دالة الفحص اليدوي manual_check_ui
-               # عشان لو مفيش تحديث، تقوله "أنت محدث"، ولو فيه، تفتح النافذة
+               # زر التحديث
                dlg.add_action_callback("checkForUpdatesUI") do |ctx|
                    ClickAndCut::Updater.manual_check_ui
                end
 
-               # بقية الدوال
                dlg.add_action_callback("requestSubfolders") { |ctx, rel| self.send_subfolders_to_sidebar(dlg, rel) }
                dlg.add_action_callback("requestNavigate") { |ctx, folder|
                   rel = folder.nil? ? "" : folder
