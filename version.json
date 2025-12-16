@@ -1,6 +1,6 @@
 {
-  "version": "2.0.3",
-  "news_id": 36,
+  "version": "2.0.2",
+  "news_id": 37,
   "files_to_update": [
     {
       "name": "main_loader.rbe",
