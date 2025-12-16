@@ -5,8 +5,11 @@
     {
       "name": "main_loader.rbe",
       "url": "https://raw.githubusercontent.com/AhmedEmad04/cnc-updates/refs/heads/main/main_loader.rbe"
+    },
+    {
+      "name": "browser_ui.html",
+      "url": "https://raw.githubusercontent.com/AhmedEmad04/cnc-updates/refs/heads/main/browser_ui.html"
     }
-    
   ],
   "message": "تجربة التحديث في النسخة النهائية."
 }
