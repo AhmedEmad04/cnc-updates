@@ -1,7 +1,7 @@
 #Encoding: UTF-8
 # ==============================================================================
 # ملف: main_loader.rb
-# (النسخة النهائية: تطبيق خطة الفصل الذكي + تحسين رسائل النظام)
+# (النسخة النهائية: تطبيق خطة الفصل الذكي + التعامل مع Redirection)
 # ==============================================================================
 
 require 'sketchup.rb'
@@ -46,7 +46,6 @@ module ClickAndCut
 
     # 1. دالة الفحص
     def self.check_for_update_availability
-      # ... (الكود لم يتغير) ...
       begin
         separator = API_URL.include?('?') ? '&' : '?'
         safe_url = "#{API_URL}#{separator}nocache=#{Time.now.to_i}"
@@ -87,7 +86,6 @@ module ClickAndCut
       if has_update
         self.show_update_dialog
       else
-        # 🔥 تم التحديث: رسالة احترافية بدلاً من messagebox 🔥
         self.show_up_to_date_dialog(ClickAndCut::CURRENT_VERSION)
       end
     end
@@ -127,7 +125,6 @@ module ClickAndCut
 
     # 3. نافذة تفاصيل التحديث
     def self.show_update_dialog
-      # ... (الكود لم يتغير) ...
       unless @@server_data; self.check_for_update_availability; end
       return unless @@server_data 
 
@@ -231,7 +228,6 @@ module ClickAndCut
       
       dlg.add_action_callback("close_and_warn") do
         dlg.close
-        # 🔥 تم التحديث: استدعاء النافذة الاحترافية لتحذير إعادة التشغيل 🔥
         ClickAndCut::LibraryBrowser.show_restart_required_warning(is_update_finished: true)
       end
       dlg.add_action_callback("close_dialog") { dlg.close }
@@ -250,7 +246,7 @@ module ClickAndCut
       end
     end
     
-    # 4.1. دالة التحميل الفعلي الصامت (يتم استدعاؤها في Thread)
+    # 4.1. 🔥 دالة التحميل الفعلي الصامت (بمتابعة التحويلات) 🔥
     def self.run_background_download(files_list)
         folder_path = File.dirname(__FILE__)
         
@@ -266,26 +262,42 @@ module ClickAndCut
                 next unless url_str.start_with?('http')
                 target_file = File.join(folder_path, "#{file_name}.new") 
                 
-                uri = URI(url_str)
-                http = Net::HTTP.new(uri.host, uri.port)
-                http.use_ssl = true
-                # الكود الناجح لـ SSL
-                http.verify_mode = OpenSSL::SSL::VERIFY_NONE 
+                # --- كود التحميل الآمن مع متابعة التحويل (Redirection) ---
+                max_redirects = 5
+                current_url = url_str
                 
-                request = Net::HTTP::Get.new(uri.request_uri)
-                response = http.request(request)
-
-                if response.code == "200"
-                    content = response.body
-                    if content.include?("<!DOCTYPE html>")
-                        raise "الرابط يحتوي على صفحة ويب خطأ"
+                loop do
+                    uri = URI(current_url)
+                    http = Net::HTTP.new(uri.host, uri.port)
+                    http.use_ssl = true
+                    http.verify_mode = OpenSSL::SSL::VERIFY_NONE 
+                    http.open_timeout = 10 # زيادة المهلة
+                    http.read_timeout = 30 # زيادة مهلة القراءة
+                    
+                    request = Net::HTTP::Get.new(uri.request_uri)
+                    response = http.request(request)
+                    
+                    if response.is_a?(Net::HTTPRedirection)
+                        max_redirects -= 1
+                        raise "تجاوز الحد الأقصى للتحويلات" if max_redirects < 0
+                        current_url = response['location']
+                        next
                     end
                     
-                    File.open(target_file, "wb") { |f| f.write(content) }
-                    
-                else
-                    raise "خطأ سيرفر: #{response.code} عند تحميل #{file_name}"
+                    # التحقق من الاستجابة النهائية
+                    if response.code == "200"
+                        content = response.body
+                        if content.include?("<!DOCTYPE html>")
+                            raise "الرابط يحتوي على صفحة ويب خطأ"
+                        end
+                        
+                        File.open(target_file, "wb") { |f| f.write(content) }
+                        break # تم التحميل بنجاح
+                    else
+                        raise "خطأ سيرفر: #{response.code}"
+                    end
                 end
+                # --- نهاية كود التحميل الآمن ---
 
             rescue => e
                 @@download_status = { status: :error, error: "الملف: #{file_name} - الخطأ: #{e.message.gsub("'", "")}" }
@@ -313,11 +325,13 @@ module ClickAndCut
             dlg.execute_script("showError('#{status[:error].gsub("'", "\\'")}')")
 
         elsif status[:status] == :progress
-            msg = "جاري تحميل ملف #{status[:count]} من #{status[:total]}..."
-            dlg.execute_script("updateStatus('#{msg}', '#{status[:file].gsub("'", "\\'")}')")
+            # لتجنب تحديث الحالة بنفس البيانات بشكل متكرر
+            if status[:count] > 0
+                msg = "جاري تحميل ملف #{status[:count]} من #{status[:total]}..."
+                dlg.execute_script("updateStatus('#{msg}', '#{status[:file].gsub("'", "\\'")}')")
+            end
         end
         
-        # يجب إغلاق النافذة إذا تم إغلاقها يدوياً لوقف الـ Timer
         unless dlg.visible?
             UI.stop_timer(@@timer_id) if @@timer_id
             @@timer_id = nil
@@ -327,7 +341,7 @@ module ClickAndCut
   end
   
   # ==========================================================================
-  # 🔒 وحدة الحماية (Protection Module) - (بدون تغيير)
+  # 🔒 وحدة الحماية (Protection Module)
   # ==========================================================================
   module Protection
     API_URL = "http://cnc-api.atwebpages.com/cnc_api/check.php"
@@ -499,7 +513,7 @@ module ClickAndCut
   end
 
   # ==========================================================================
-  # 🌍 وحدة المجتمع (Community) - (بدون تغيير)
+  # 🌍 وحدة المجتمع (Community)
   # ==========================================================================
   module Community
     COMMUNITY_URL = "http://cnc-api.atwebpages.com/cnc_api/community_page.php"
@@ -604,7 +618,6 @@ module ClickAndCut
     end
     
     def self.check_integrity(file_path)
-    # ... (الكود لم يتغير) ...
         return false unless File.exist?(file_path)
         content = File.read(file_path, mode: "rb")
         current_hash = Digest::SHA256.hexdigest(content)
@@ -612,7 +625,6 @@ module ClickAndCut
     end
 
     def self.open_browser_window
-    # ... (الكود لم يتغير) ...
         if ClickAndCut::Protection.is_licensed? == false
           ClickAndCut::Protection.show_license_info
         else
@@ -625,7 +637,6 @@ module ClickAndCut
           end
 
           if ClickAndCut::Updater.is_restart_required?
-             # 🔥 تم التحديث: استبدال messagebox بنافذة احترافية 🔥
              self.show_restart_required_warning 
              return 
           end
@@ -810,4 +821,3 @@ module ClickAndCut
     end
   end
 end
-
