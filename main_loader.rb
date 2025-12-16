@@ -1,6 +1,7 @@
 #Encoding: UTF-8
 # ==============================================================================
-# ملف: main_loader.rb (تم التعديل والإصلاح النهائي)
+# ملف: main_loader.rb
+# (نسخة اختبار الموتور - بدون واجهة تحميل)
 # ==============================================================================
 
 require 'sketchup.rb'
@@ -19,16 +20,16 @@ require 'win32/registry'
 module ClickAndCut
 
   # 1. تعريف رقم الإصدار الحالي
-  CURRENT_VERSION = "2.0.0" 
+  CURRENT_VERSION = "2.0.1" 
   
-  # الرابط الصحيح (كما تم التأكيد عليه)
+  # الرابط الصحيح
   UPDATE_API_URL = "https://raw.githubusercontent.com/AhmedEmad04/cnc-updates/main/version.json"
 
   # 2. بصمة ملف الواجهة
   UI_HASH = "0b161acf3e2aee885f86bd4799d773b156b2767dcbc83634848136382214c282"
 
   # ==========================================================================
-  # 🔄 وحدة التحديث (Updater Module)
+  # 🔄 وحدة التحديث (Updater Module) - (نسخة مبسطة للاختبار)
   # ==========================================================================
   module Updater
     API_URL = ClickAndCut::UPDATE_API_URL 
@@ -39,10 +40,9 @@ module ClickAndCut
       @@restart_required
     end
 
-    # 1. دالة الفحص (تم إصلاح خطأ path=)
+    # 1. دالة الفحص
     def self.check_for_update_availability
       begin
-        # --- [تعديل] طريقة آمنة لإضافة مانع الكاش ---
         separator = API_URL.include?('?') ? '&' : '?'
         safe_url = "#{API_URL}#{separator}nocache=#{Time.now.to_i}"
         uri = URI(safe_url)
@@ -51,9 +51,7 @@ module ClickAndCut
         http.use_ssl = true
         http.verify_mode = OpenSSL::SSL::VERIFY_NONE 
         
-        # نستخدم request_uri لأنه أصبح يحتوي على الكاش
         request = Net::HTTP::Get.new(uri.request_uri)
-        
         response = http.request(request)
         
         if response.code != "200"
@@ -121,7 +119,7 @@ module ClickAndCut
             <div class="desc"><strong>التفاصيل:</strong><br>#{update_msg}</div>
             <div>
               <button class="btn btn-secondary" onclick="window.location='skp:close_dialog'">لاحقاً</button>
-              <button class="btn btn-primary" onclick="window.location='skp:start_download_ui'">تحديث الآن</button>
+              <button class="btn btn-primary" onclick="window.location='skp:start_download_test'">تحديث الآن</button>
             </div>
           </div>
         </body>
@@ -131,124 +129,67 @@ module ClickAndCut
       d = UI::HtmlDialog.new({:dialog_title => "تحديث Click & Cut", :width => 400, :height => 450, :style => UI::HtmlDialog::STYLE_DIALOG})
       d.set_html(html_content); d.center
       d.add_action_callback("close_dialog") { d.close }
-      d.add_action_callback("start_download_ui") { d.close; self.show_progress_dialog(@@server_data["files_to_update"]) }
+      
+      # هنا التغيير: بدلاً من فتح نافذة تحميل، سنقوم بالتحميل المباشر
+      d.add_action_callback("start_download_test") do 
+        d.close
+        self.perform_simple_download(@@server_data["files_to_update"])
+      end
       d.show
     end
 
-    # 4. 🔥 نافذة التحميل (تم إضافة تصحيح SSL هنا) 🔥
-    def self.show_progress_dialog(files_list)
+    # 4. 🔥 التحميل المباشر (بدون جرافيك) للتجربة 🔥
+    def self.perform_simple_download(files_list)
       return unless files_list.is_a?(Array)
-
-      html_content = <<-HTML
-        <!DOCTYPE html>
-        <html dir="rtl">
-        <head>
-          <meta charset="UTF-8">
-          <style>
-            body { font-family: 'Segoe UI', sans-serif; background: #2c3e50; color: white; padding: 20px; text-align: center; display: flex; flex-direction: column; justify-content: center; height: 100vh; box-sizing: border-box; margin: 0; }
-            .loader { border: 5px solid rgba(255,255,255,0.1); border-top: 5px solid #f39c12; border-radius: 50%; width: 50px; height: 50px; animation: spin 1s linear infinite; margin: 0 auto 20px auto; }
-            @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
-            .status-text { font-size: 16px; margin-bottom: 10px; color: #ecf0f1; }
-            .file-name { font-size: 14px; color: #bdc3c7; font-family: monospace; }
-            .success-icon { font-size: 60px; color: #2ecc71; display: none; margin-bottom: 20px; }
-            .btn-restart { background: #e74c3c; color: white; border: none; padding: 10px 25px; border-radius: 25px; font-weight: bold; cursor: pointer; display: none; margin-top: 20px; }
-            .btn-restart:hover { background: #c0392b; }
-          </style>
-          <script>
-            function updateStatus(msg, file) {
-               document.getElementById('status').innerText = msg;
-               document.getElementById('filename').innerText = file;
-            }
-            function showSuccess() {
-               document.querySelector('.loader').style.display = 'none';
-               document.querySelector('.success-icon').style.display = 'block';
-               document.getElementById('status').innerText = 'تم التحميل بنجاح!';
-               document.getElementById('filename').innerText = 'يرجى إعادة تشغيل SketchUp';
-               document.querySelector('.btn-restart').style.display = 'inline-block';
-            }
-            function showError(msg) {
-               document.querySelector('.loader').style.display = 'none';
-               document.getElementById('status').innerText = '❌ ' + msg;
-               document.getElementById('status').style.color = '#e74c3c';
-            }
-          </script>
-        </head>
-        <body>
-          <div class="loader"></div>
-          <div class="success-icon">✔</div>
-          <div id="status" class="status-text">جاري الاتصال بالخادم...</div>
-          <div id="filename" class="file-name">...</div>
-          <button class="btn-restart" onclick="window.location='skp:close_and_warn'">إغلاق</button>
-        </body>
-        </html>
-      HTML
-
-      dlg = UI::HtmlDialog.new({:dialog_title => "جاري التحميل...", :width => 350, :height => 300, :style => UI::HtmlDialog::STYLE_DIALOG})
-      dlg.set_html(html_content); dlg.center
       
-      dlg.add_action_callback("close_and_warn") do
-        dlg.close
-        UI.messagebox("يجب إغلاق SketchUp تماماً الآن لتثبيت التحديث.", MB_OK)
-      end
-
-      dlg.show
-
-      Thread.new do
-        folder_path = File.dirname(__FILE__)
-        success_count = 0
-        total_files = files_list.length
-
-        files_list.each_with_index do |file_info, index|
-          file_name = file_info["name"].to_s
-          url_str = file_info["url"].to_s
+      folder_path = File.dirname(__FILE__)
+      success_count = 0
+      
+      # رسالة تنبيه أن التحميل سيبدأ
+      Sketchup.set_status_text("جاري تحميل التحديثات... يرجى الانتظار")
+      
+      files_list.each do |file_info|
+        file_name = file_info["name"].to_s
+        url_str = file_info["url"].to_s
+        
+        begin
+          next unless url_str.start_with?('http')
+          target_file = File.join(folder_path, "#{file_name}.new")
           
-          dlg.execute_script("updateStatus('جاري تحميل ملف #{index + 1} من #{total_files}...', '#{file_name}');")
-          sleep(0.3) 
+          uri = URI(url_str)
+          http = Net::HTTP.new(uri.host, uri.port)
+          http.use_ssl = true
+          http.verify_mode = OpenSSL::SSL::VERIFY_NONE # التصليح موجود هنا
+          
+          req = Net::HTTP::Get.new(uri.request_uri)
+          res = http.request(req)
 
-          begin
-            next unless url_str.start_with?('http')
-            target_file = File.join(folder_path, "#{file_name}.new")
-            
-            uri = URI(url_str)
-            http = Net::HTTP.new(uri.host, uri.port)
-            http.use_ssl = true
-            
-            # --- [تعديل] سطر الحماية المفقود الذي سبب فشل التحميل ---
-            http.verify_mode = OpenSSL::SSL::VERIFY_NONE 
-            
-            request = Net::HTTP::Get.new(uri.request_uri)
-            response = http.request(request)
-
-            if response.code == "200"
-              content = response.body
-              if content.include?("<!DOCTYPE html>")
-                 dlg.execute_script("showError('الرابط يحتوي على صفحة ويب خطأ');")
-                 break
-              end
-              File.open(target_file, "wb") { |f| f.write(content) }
-              success_count += 1
-            else
-              dlg.execute_script("showError('خطأ سيرفر: #{response.code}');")
-            end
-
-          rescue => e
-            dlg.execute_script("showError('#{e.message}');")
+          if res.code == "200"
+            File.open(target_file, "wb") { |f| f.write(res.body) }
+            success_count += 1
+            puts "✅ Downloaded: #{file_name}"
+          else
+            puts "❌ Failed: #{file_name} (Code: #{res.code})"
           end
-        end
-
-        if success_count > 0
-          @@restart_required = true
-          dlg.execute_script("showSuccess();")
-        else
-          dlg.execute_script("showError('فشل تحميل الملفات');")
+        rescue => e
+          puts "❌ Error downloading #{file_name}: #{e.message}"
         end
       end
+
+      if success_count > 0
+        @@restart_required = true
+        UI.messagebox("✅ تم تحميل الملفات بنجاح!\n\nعدد الملفات: #{success_count}\nيرجى إغلاق SketchUp تماماً وإعادة تشغيله لتثبيت التحديث.", MB_OK)
+      else
+        UI.messagebox("❌ فشل تحميل الملفات.\nتأكد من اتصال الإنترنت.", MB_OK)
+      end
+      
+      Sketchup.set_status_text("")
     end
 
   end
   
   # ==========================================================================
-  # 🔒 وحدة الحماية (Protection Module)
+  # 🔒 وحدة الحماية (بدون تعديل)
   # ==========================================================================
   module Protection
     API_URL = "http://cnc-api.atwebpages.com/cnc_api/check.php"
@@ -420,7 +361,7 @@ module ClickAndCut
   end
 
   # ==========================================================================
-  # 🌍 وحدة المجتمع (Smart Community Notification)
+  # 🌍 وحدة المجتمع (بدون تعديل)
   # ==========================================================================
   module Community
     COMMUNITY_URL = "http://cnc-api.atwebpages.com/cnc_api/community_page.php"
@@ -462,7 +403,7 @@ module ClickAndCut
   end
 
   # ==========================================================================
-  # 📂 وحدة المكتبة (LibraryBrowser)
+  # 📂 وحدة المكتبة (بدون تعديل)
   # ==========================================================================
   module LibraryBrowser
     PLUGIN_DIR = File.dirname(__FILE__).force_encoding("UTF-8")
@@ -489,7 +430,6 @@ module ClickAndCut
           ClickAndCut::Protection.show_license_info
         else
           
-          # 🔥 إصلاح هام: وضعنا الفحص داخل rescue عشان لو النت قاطع البلاجن يفتح
           has_update = false
           begin
              has_update = ClickAndCut::Updater.check_for_update_availability
@@ -505,11 +445,6 @@ module ClickAndCut
           internal_path = File.join(File.dirname(__FILE__), 'Library_Content')
           @@library_root_path = internal_path.force_encoding("UTF-8")
           h_path = File.join(File.dirname(__FILE__), 'browser_ui.html')
-
-          # if ClickAndCut::UI_HASH != "PASTE_YOUR_HASH_HERE" && !self.check_integrity(h_path)
-          #    UI.messagebox("خطأ أمني: تم اكتشاف تعديل غير مصرح به.", MB_OK)
-          #    return
-          # end
 
           if File.directory?(@@library_root_path)
              self.load_favorites
@@ -539,60 +474,59 @@ module ClickAndCut
                    dlg.execute_script("showCommunityNotification(false);") 
                end
 
-               # زر التحديث
                dlg.add_action_callback("checkForUpdatesUI") do |ctx|
                    ClickAndCut::Updater.manual_check_ui
                end
 
                dlg.add_action_callback("requestSubfolders") { |ctx, rel| self.send_subfolders_to_sidebar(dlg, rel) }
                dlg.add_action_callback("requestNavigate") { |ctx, folder|
-                  rel = folder.nil? ? "" : folder
-                  target = File.join(@@library_root_path, rel)
-                  if File.directory?(target)
-                      @@current_relative_path = rel
-                      self.send_content_to_ui(dlg, target)
-                  else
-                      @@current_relative_path = ""
-                      self.send_content_to_ui(dlg, @@library_root_path)
-                  end
+                 rel = folder.nil? ? "" : folder
+                 target = File.join(@@library_root_path, rel)
+                 if File.directory?(target)
+                     @@current_relative_path = rel
+                     self.send_content_to_ui(dlg, target)
+                 else
+                     @@current_relative_path = ""
+                     self.send_content_to_ui(dlg, @@library_root_path)
+                 end
                }
                dlg.add_action_callback("requestFavorites") { |ctx| self.send_favorites_to_ui(dlg) }
                dlg.add_action_callback("toggleFavorite") { |ctx, path| self.toggle_favorite(dlg, path) }
                dlg.add_action_callback("requestBack") { |ctx|
-                  @@current_relative_path = File.dirname(@@current_relative_path)
-                  @@current_relative_path = "" if @@current_relative_path == "."
-                  self.send_content_to_ui(dlg, File.join(@@library_root_path, @@current_relative_path))
+                 @@current_relative_path = File.dirname(@@current_relative_path)
+                 @@current_relative_path = "" if @@current_relative_path == "."
+                 self.send_content_to_ui(dlg, File.join(@@library_root_path, @@current_relative_path))
                }
                
                dlg.add_action_callback("importComponent") { |ctx, rel|
-                  if ClickAndCut::Protection.is_licensed?
-                      full = File.join(@@library_root_path, rel)
-                      unless File.exist?(full)
-                          poss = File.join(@@library_root_path, @@current_relative_path, rel + ".cnc")
-                          full = File.exist?(poss) ? poss : File.join(@@library_root_path, @@current_relative_path, rel + ".skp")
-                      end
+                 if ClickAndCut::Protection.is_licensed?
+                     full = File.join(@@library_root_path, rel)
+                     unless File.exist?(full)
+                         poss = File.join(@@library_root_path, @@current_relative_path, rel + ".cnc")
+                         full = File.exist?(poss) ? poss : File.join(@@library_root_path, @@current_relative_path, rel + ".skp")
+                     end
 
-                      if File.exist?(full)
-                          if full.downcase.end_with?('.cnc')
-                              temp = File.join(@@thumbs_temp_dir, "tmp_#{Time.now.to_i}.skp")
-                              begin; dec = OpenSSL::Cipher.new(CIPHER_ALGO); dec.decrypt; dec.key = FILE_SECRET_KEY; dec.iv = FILE_FIXED_IV
-                              File.open(temp, 'wb') { |o| File.open(full, 'rb') { |i| while b=i.read(4096); o.write(dec.update(b)); end; o.write(dec.final) } }
-                              self.do_import_skp(temp); rescue; UI.messagebox("خطأ فك التشفير"); ensure; File.delete(temp) if File.exist?(temp); end
-                          else; self.do_import_skp(full); end
-                      end
-                  else
-                      ClickAndCut::Protection.show_license_info
-                  end
+                     if File.exist?(full)
+                         if full.downcase.end_with?('.cnc')
+                             temp = File.join(@@thumbs_temp_dir, "tmp_#{Time.now.to_i}.skp")
+                             begin; dec = OpenSSL::Cipher.new(CIPHER_ALGO); dec.decrypt; dec.key = FILE_SECRET_KEY; dec.iv = FILE_FIXED_IV
+                             File.open(temp, 'wb') { |o| File.open(full, 'rb') { |i| while b=i.read(4096); o.write(dec.update(b)); end; o.write(dec.final) } }
+                             self.do_import_skp(temp); rescue; UI.messagebox("خطأ فك التشفير"); ensure; File.delete(temp) if File.exist?(temp); end
+                         else; self.do_import_skp(full); end
+                     end
+                 else
+                     ClickAndCut::Protection.show_license_info
+                 end
                }
                
                dlg.add_action_callback("requestRefreshCurrentPath") { |ctx|
-                  if @@current_relative_path == "FAVORITES_MODE" then self.send_favorites_to_ui(dlg)
-                  else self.send_content_to_ui(dlg, File.join(@@library_root_path, @@current_relative_path)) end
+                 if @@current_relative_path == "FAVORITES_MODE" then self.send_favorites_to_ui(dlg)
+                 else self.send_content_to_ui(dlg, File.join(@@library_root_path, @@current_relative_path)) end
                }
                dlg.add_action_callback("requestGlobalSearch") { |ctx, q| self.perform_global_search(dlg, q) }
                dlg.add_action_callback("requestClearCache") do |ctx|
-                  FileUtils.rm_rf(@@thumbs_temp_dir) if File.directory?(@@thumbs_temp_dir); Dir.mkdir(@@thumbs_temp_dir)
-                  self.send_subfolders_to_sidebar(dlg, ""); self.send_content_to_ui(dlg, @@library_root_path)
+                 FileUtils.rm_rf(@@thumbs_temp_dir) if File.directory?(@@thumbs_temp_dir); Dir.mkdir(@@thumbs_temp_dir)
+                 self.send_subfolders_to_sidebar(dlg, ""); self.send_content_to_ui(dlg, @@library_root_path)
                end
 
                dlg.center; dlg.show
