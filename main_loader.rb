@@ -20,7 +20,7 @@ require 'win32/registry'
 module ClickAndCut
 
   # 1. تعريف رقم الإصدار الحالي
-  CURRENT_VERSION = "2.0.2" 
+  CURRENT_VERSION = "2.0.3" 
   
   # الرابط الصحيح
   UPDATE_API_URL = "https://raw.githubusercontent.com/AhmedEmad04/cnc-updates/main/version.json"
@@ -762,3 +762,4 @@ module ClickAndCut
     end
   end
 end
+
