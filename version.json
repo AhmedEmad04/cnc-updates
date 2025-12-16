@@ -4,7 +4,7 @@
   "files_to_update": [
     {
       "name": "main_loader.rb",
-      "url": "https://raw.githubusercontent.com/AhmedEmad04/cnc-updates/main/main_loader.rb"
+      "url": "https://raw.githubusercontent.com/AhmedEmad04/cnc-updates/refs/heads/main/main_loader.rb"
     }
   ],
   "message": "تصحيح رابط التحميل النهائي."
