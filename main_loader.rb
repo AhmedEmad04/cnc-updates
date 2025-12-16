@@ -1,7 +1,7 @@
 #Encoding: UTF-8
 # ==============================================================================
 # ملف: main_loader.rb
-# (النسخة النهائية: تطبيق خطة الفصل الذكي + تبسيط كود التحميل الآمن)
+# (النسخة النهائية: إصلاح مقارنة الإصدار + تطبيق الفصل الذكي والواجهات الاحترافية)
 # ==============================================================================
 
 require 'sketchup.rb'
@@ -43,6 +43,22 @@ module ClickAndCut
     def self.is_restart_required?
       @@restart_required
     end
+    
+    # 🔥 دالة المقارنة السليمة للإصدارات (لحل مشكلة عدم اكتشاف التحديث) 🔥
+    def self.version_is_greater?(server_ver, local_ver)
+      # تحويل أجزاء الإصدار لأرقام للمقارنة الدقيقة (2.0.0 vs 2.0.1)
+      s_parts = server_ver.split('.').map(&:to_i)
+      l_parts = local_ver.split('.').map(&:to_i)
+      
+      [s_parts.length, l_parts.length].max.times do |i|
+        s_part = s_parts[i] || 0
+        l_part = l_parts[i] || 0
+        return true if s_part > l_part
+        return false if s_part < l_part
+      end
+      return false
+    end
+
 
     # 1. دالة الفحص
     def self.check_for_update_availability
@@ -70,7 +86,8 @@ module ClickAndCut
         local_ver = ClickAndCut::CURRENT_VERSION.to_s.strip
         
         puts "🔍 Check: Server(#{server_ver}) vs Local(#{local_ver})"
-        return (server_ver > local_ver)
+        # 🔥 تم التعديل: استخدام دالة المقارنة السليمة 🔥
+        return self.version_is_greater?(server_ver, local_ver)
       rescue => e
         puts "❌ Update Error: #{e.message}"
         return false
@@ -86,6 +103,7 @@ module ClickAndCut
       if has_update
         self.show_update_dialog
       else
+        # 🔥 رسالة احترافية 🔥
         self.show_up_to_date_dialog(ClickAndCut::CURRENT_VERSION)
       end
     end
@@ -165,6 +183,7 @@ module ClickAndCut
       d = UI::HtmlDialog.new({:dialog_title => "تحديث Click & Cut", :width => 400, :height => 450, :style => UI::HtmlDialog::STYLE_DIALOG})
       d.set_html(html_content); d.center
       d.add_action_callback("close_dialog") { d.close }
+      # 🔥 ربط زر التحديث بنافذة المراقب 🔥
       d.add_action_callback("start_download_ui") { d.close; self.show_progress_dialog(@@server_data["files_to_update"]) }
       d.show
     end
@@ -262,7 +281,7 @@ module ClickAndCut
                 next unless url_str.start_with?('http')
                 target_file = File.join(folder_path, "#{file_name}.new") 
                 
-                # --- كود التحميل المُبسط والآمن (مع زيادة المهلة) ---
+                # --- كود التحميل المُبسط والآمن (مع زيادة المهلة ومعالجة التحويل) ---
                 uri = URI(url_str)
                 http = Net::HTTP.new(uri.host, uri.port)
                 http.use_ssl = true
@@ -270,11 +289,11 @@ module ClickAndCut
                 http.open_timeout = 15 # زيادة المهلة
                 http.read_timeout = 45 # زيادة مهلة القراءة
                 
-                # السماح بالتحويل التلقائي لمرة واحدة على الأقل
+                # إرسال الطلب الأولي
                 request = Net::HTTP::Get.new(uri.request_uri)
                 response = http.request(request)
                 
-                # محاولة التحويل لمرة واحدة فقط (لأن الأكواد المعقدة تفشل في SketchUp)
+                # محاولة التحويل لمرة واحدة (لتجنب التجميد في الحلقات المعقدة)
                 if response.is_a?(Net::HTTPRedirection)
                     redirect_uri = URI(response['location'])
                     http_redirect = Net::HTTP.new(redirect_uri.host, redirect_uri.port)
@@ -287,7 +306,6 @@ module ClickAndCut
                 if response.code == "200"
                     content = response.body
                     if content.include?("<!DOCTYPE html>")
-                        # هذا هو الخطأ الذي ظهر معك (الرابط يحتوي على صفحة ويب)
                         raise "الرابط يحتوي على صفحة ويب خطأ"
                     end
                     
