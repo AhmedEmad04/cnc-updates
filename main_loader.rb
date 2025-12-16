@@ -19,11 +19,11 @@ require 'win32/registry'
 module ClickAndCut
 
   # 1. تعريف رقم الإصدار الحالي
-  CURRENT_VERSION = "2.0.0" 
+  CURRENT_VERSION = "2.0.1" 
   
-  # رابط التحديث (يشير إلى main)
-  UPDATE_API_URL = "https://raw.githubusercontent.com/AhmedEmad04/cnc-updates/main/version.json"
-
+# رابط التحديث (الرابط الصحيح اللي أنت جبته)
+  UPDATE_API_URL = "https://raw.githubusercontent.com/AhmedEmad04/cnc-updates/refs/heads/main/version.json"
+  
   # 2. بصمة ملف الواجهة (تأكد من تحديثها لو غيرت ملف HTML)
   UI_HASH = "0b161acf3e2aee885f86bd4799d773b156b2767dcbc83634848136382214c282"
 
