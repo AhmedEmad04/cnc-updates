@@ -3,9 +3,14 @@
   "news_id": 1,
   "files_to_update": [
     {
-      "name": "main_loader.rb",
-      "url": "https://raw.githubusercontent.com/AhmedEmad04/cnc-updates/refs/heads/main/main_loader.rb"
+      "name": "main_loader.rbe",
+      "url": "https://raw.githubusercontent.com/AhmedEmad04/cnc-updates/refs/heads/main/main_loader.rbe"
+    },
+    {
+      "name": "ClickAndCut_Library.susig",
+      "url": "https://raw.githubusercontent.com/AhmedEmad04/cnc-updates/refs/heads/main/ClickAndCut_Library.susig"
     }
+    
   ],
   "message": "صفحة التحميل الجديدة يارب تشتغل."
 }
