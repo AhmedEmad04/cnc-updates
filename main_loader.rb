@@ -167,7 +167,7 @@ module ClickAndCut
           uri = URI(url_str)
           http = Net::HTTP.new(uri.host, uri.port)
           http.use_ssl = true
-          http.verify_mode = OpenSSL::SSL::VERIFY_NONE # التصليح موجود هنا (من الكود الأصلي)
+          http.verify_mode = OpenSSL::SSL::VERIFY_NONE 
           
           req = Net::HTTP::Get.new(uri.request_uri)
           res = http.request(req)
@@ -424,7 +424,7 @@ module ClickAndCut
   end
 
   # ==========================================================================
-  # 📂 وحدة المكتبة (LibraryBrowser) - (تم إضافة دالة الرسائل وتعديل استدعاءاتها فقط)
+  # 📂 وحدة المكتبة (LibraryBrowser)
   # ==========================================================================
   module LibraryBrowser
     PLUGIN_DIR = File.dirname(__FILE__).force_encoding("UTF-8")
@@ -486,126 +486,135 @@ module ClickAndCut
     end
 
     def self.open_browser_window
-      # 👇 هنا استدعاء نافذة الترخيص (لم يتم تغييرها)
-      if ClickAndCut::Protection.is_licensed? == false
-        ClickAndCut::Protection.show_license_info
-      else
-        
-        has_update = false
-        begin
-           has_update = ClickAndCut::Updater.check_for_update_availability
-        rescue
-           has_update = false
-        end
-
-        if ClickAndCut::Updater.is_restart_required?
-          # 🔥 تم التعديل: استبدال UI.messagebox بنافذة HTML 🔥
-          self.show_update_status_dialog(
-            is_success: false, 
-            title: "تنبيه هام", 
-            message: "تم تحميل تحديثات جديدة.", 
-            details: "يجب إغلاق SketchUp تماماً وإعادة تشغيله."
-          )
-          return 
-        end
-
-        internal_path = File.join(File.dirname(__FILE__), 'Library_Content')
-        @@library_root_path = internal_path.force_encoding("UTF-8")
-        h_path = File.join(File.dirname(__FILE__), 'browser_ui.html')
-
-        if File.directory?(@@library_root_path)
-           self.load_favorites
-           Dir.mkdir(@@thumbs_temp_dir) unless Dir.exist?(@@thumbs_temp_dir)
-           
-           d_opts = {
-             :dialog_title => " Click & Cut Pro ",
-             :preferences_key => "ClickAndCut_Pro_UI_V2",
-             :scrollable => false, :resizable => true, :width => 1200, :height => 800,
-             :style => UI::HtmlDialog::STYLE_DIALOG
-           }
-           
-           dlg = UI::HtmlDialog.new(d_opts)
-           
-           if File.exist?(h_path)
-             dlg.set_file(h_path)
-             
-             dlg.add_action_callback("requestRootFolders") do |ctx| 
-                 self.send_subfolders_to_sidebar(dlg, "") 
-                 show_news_dot = ClickAndCut::Community.check_notification_status
-                 dlg.execute_script("showCommunityNotification(#{show_news_dot});") 
-                 dlg.execute_script("showUpdateNotification(#{has_update});")
-             end
-
-             dlg.add_action_callback("openCommunityPage") do |ctx|
-                 ClickAndCut::Community.open_community_window
-                 dlg.execute_script("showCommunityNotification(false);") 
-             end
-
-             dlg.add_action_callback("checkForUpdatesUI") do |ctx|
-                 ClickAndCut::Updater.manual_check_ui
-             end
-
-             dlg.add_action_callback("requestSubfolders") { |ctx, rel| self.send_subfolders_to_sidebar(dlg, rel) }
-             dlg.add_action_callback("requestNavigate") { |ctx, folder|
-               rel = folder.nil? ? "" : folder
-               target = File.join(@@library_root_path, rel)
-               if File.directory?(target)
-                   @@current_relative_path = rel
-                   self.send_content_to_ui(dlg, target)
-               else
-                   @@current_relative_path = ""
-                   self.send_content_to_ui(dlg, @@library_root_path)
-               end
-             }
-             dlg.add_action_callback("requestFavorites") { |ctx| self.send_favorites_to_ui(dlg) }
-             dlg.add_action_callback("toggleFavorite") { |ctx, path| self.toggle_favorite(dlg, path) }
-             dlg.add_action_callback("requestBack") { |ctx|
-               @@current_relative_path = File.dirname(@@current_relative_path)
-               @@current_relative_path = "" if @@current_relative_path == "."
-               self.send_content_to_ui(dlg, File.join(@@library_root_path, @@current_relative_path))
-             }
-             
-             dlg.add_action_callback("importComponent") { |ctx, rel|
-               if ClickAndCut::Protection.is_licensed?
-                   full = File.join(@@library_root_path, rel)
-                   unless File.exist?(full)
-                       poss = File.join(@@library_root_path, @@current_relative_path, rel + ".cnc")
-                       full = File.exist?(poss) ? poss : File.join(@@library_root_path, @@current_relative_path, rel + ".skp")
-                   end
-
-                   if File.exist?(full)
-                       if full.downcase.end_with?('.cnc')
-                           temp = File.join(@@thumbs_temp_dir, "tmp_#{Time.now.to_i}.skp")
-                           begin; dec = OpenSSL::Cipher.new(CIPHER_ALGO); dec.decrypt; dec.key = FILE_SECRET_KEY; dec.iv = FILE_FIXED_IV
-                           File.open(temp, 'wb') { |o| File.open(full, 'rb') { |i| while b=i.read(4096); o.write(dec.update(b)); end; o.write(dec.final) } }
-                           self.do_import_skp(temp); rescue; UI.messagebox("خطأ فك التشفير"); ensure; File.delete(temp) if File.exist?(temp); end
-                       else; self.do_import_skp(full); end
-                   end
-               else
-                   ClickAndCut::Protection.show_license_info
-               end
-             }
-             
-             dlg.add_action_callback("requestRefreshCurrentPath") { |ctx|
-               if @@current_relative_path == "FAVORITES_MODE" then self.send_favorites_to_ui(dlg)
-               else self.send_content_to_ui(dlg, File.join(@@library_root_path, @@current_relative_path)) end
-             }
-             dlg.add_action_callback("requestGlobalSearch") { |ctx, q| self.perform_global_search(dlg, q) }
-             dlg.add_action_callback("requestClearCache") do |ctx|
-               FileUtils.rm_rf(@@thumbs_temp_dir) if File.directory?(@@thumbs_temp_dir); Dir.mkdir(@@thumbs_temp_dir)
-               self.send_subfolders_to_sidebar(dlg, ""); self.send_content_to_ui(dlg, @@library_root_path)
-             end
-
-             dlg.center; dlg.show
-           else
-             # 👇 رسالة خطأ (لم تتغير)
-             UI.messagebox("ملف الواجهة مفقود!")
-           end
+        if ClickAndCut::Protection.is_licensed? == false
+          ClickAndCut::Protection.show_license_info
         else
-           # 👇 رسالة خطأ (لم تتغير)
-           UI.messagebox("خطأ: لم يتم العثور على مجلد المكتبة.", MB_OK)
+          
+          has_update = false
+          begin
+             has_update = ClickAndCut::Updater.check_for_update_availability
+          rescue
+             has_update = false
+          end
+
+          if ClickAndCut::Updater.is_restart_required?
+             # 🔥 تم التعديل: استبدال UI.messagebox بنافذة HTML 🔥
+             self.show_update_status_dialog(
+               is_success: false, 
+               title: "تنبيه هام", 
+               message: "تم تحميل تحديثات جديدة.", 
+               details: "يجب إغلاق SketchUp تماماً وإعادة تشغيله."
+             )
+             return 
+          end
+
+          internal_path = File.join(File.dirname(__FILE__), 'Library_Content')
+          @@library_root_path = internal_path.force_encoding("UTF-8")
+          h_path = File.join(File.dirname(__FILE__), 'browser_ui.html')
+
+          if File.directory?(@@library_root_path)
+             self.load_favorites
+             Dir.mkdir(@@thumbs_temp_dir) unless Dir.exist?(@@thumbs_temp_dir)
+             
+             # 🔥 تم الإصلاح: استدعاء دالة فحص الحماية 🔥
+             if File.exist?(h_path) && !self.check_integrity(h_path)
+                 self.show_update_status_dialog(
+                   is_success: false, 
+                   title: "خطأ في ملف الواجهة!", 
+                   message: "تم الكشف عن تعديل غير مصرح به في ملف الواجهة (browser_ui.html).", 
+                   details: "لن يتم فتح المكتبة لضمان سلامة البرنامج."
+                 )
+                 return
+             end
+             # 🔥 نهاية الإصلاح 🔥
+             
+             d_opts = {
+               :dialog_title => " Click & Cut Pro ",
+               :preferences_key => "CNC_Library_UI_V2",
+               :scrollable => false, :resizable => true, :width => 1200, :height => 800,
+               :style => UI::HtmlDialog::STYLE_DIALOG
+             }
+             
+             dlg = UI::HtmlDialog.new(d_opts)
+             
+             if File.exist?(h_path)
+               dlg.set_file(h_path)
+               
+               dlg.add_action_callback("requestRootFolders") do |ctx| 
+                   self.send_subfolders_to_sidebar(dlg, "") 
+                   show_news_dot = ClickAndCut::Community.check_notification_status
+                   dlg.execute_script("showCommunityNotification(#{show_news_dot});") 
+                   dlg.execute_script("showUpdateNotification(#{has_update});")
+               end
+
+               dlg.add_action_callback("openCommunityPage") do |ctx|
+                   ClickAndCut::Community.open_community_window
+                   dlg.execute_script("showCommunityNotification(false);") 
+               end
+
+               dlg.add_action_callback("checkForUpdatesUI") do |ctx|
+                   ClickAndCut::Updater.manual_check_ui
+               end
+
+               dlg.add_action_callback("requestSubfolders") { |ctx, rel| self.send_subfolders_to_sidebar(dlg, rel) }
+               dlg.add_action_callback("requestNavigate") { |ctx, folder|
+                 rel = folder.nil? ? "" : folder
+                 target = File.join(@@library_root_path, rel)
+                 if File.directory?(target)
+                     @@current_relative_path = rel
+                     self.send_content_to_ui(dlg, target)
+                 else
+                     @@current_relative_path = ""
+                     self.send_content_to_ui(dlg, @@library_root_path)
+                 end
+               }
+               dlg.add_action_callback("requestFavorites") { |ctx| self.send_favorites_to_ui(dlg) }
+               dlg.add_action_callback("toggleFavorite") { |ctx, path| self.toggle_favorite(dlg, path) }
+               dlg.add_action_callback("requestBack") { |ctx|
+                 @@current_relative_path = File.dirname(@@current_relative_path)
+                 @@current_relative_path = "" if @@current_relative_path == "."
+                 self.send_content_to_ui(dlg, File.join(@@library_root_path, @@current_relative_path))
+               }
+               
+               dlg.add_action_callback("importComponent") { |ctx, rel|
+                 if ClickAndCut::Protection.is_licensed?
+                     full = File.join(@@library_root_path, rel)
+                     unless File.exist?(full)
+                         poss = File.join(@@library_root_path, @@current_relative_path, rel + ".cnc")
+                         full = File.exist?(poss) ? poss : File.join(@@library_root_path, @@current_relative_path, rel + ".skp")
+                     end
+
+                     if File.exist?(full)
+                         if full.downcase.end_with?('.cnc')
+                             temp = File.join(@@thumbs_temp_dir, "tmp_#{Time.now.to_i}.skp")
+                             begin; dec = OpenSSL::Cipher.new(CIPHER_ALGO); dec.decrypt; dec.key = FILE_SECRET_KEY; dec.iv = FILE_FIXED_IV
+                             File.open(temp, 'wb') { |o| File.open(full, 'rb') { |i| while b=i.read(4096); o.write(dec.update(b)); end; o.write(dec.final) } }
+                             self.do_import_skp(temp); rescue; UI.messagebox("خطأ فك التشفير"); ensure; File.delete(temp) if File.exist?(temp); end
+                         else; self.do_import_skp(full); end
+                     end
+                 else
+                     ClickAndCut::Protection.show_license_info
+                 end
+               }
+               
+               dlg.add_action_callback("requestRefreshCurrentPath") { |ctx|
+                 if @@current_relative_path == "FAVORITES_MODE" then self.send_favorites_to_ui(dlg)
+                 else self.send_content_to_ui(dlg, File.join(@@library_root_path, @@current_relative_path)) end
+               }
+               dlg.add_action_callback("requestGlobalSearch") { |ctx, q| self.perform_global_search(dlg, q) }
+               dlg.add_action_callback("requestClearCache") do |ctx|
+                 FileUtils.rm_rf(@@thumbs_temp_dir) if File.directory?(@@thumbs_temp_dir); Dir.mkdir(@@thumbs_temp_dir)
+                 self.send_subfolders_to_sidebar(dlg, ""); self.send_content_to_ui(dlg, @@library_root_path)
+               end
+
+               dlg.center; dlg.show
+             else
+               UI.messagebox("ملف الواجهة مفقود!")
+             end
+          else
+             UI.messagebox("خطأ: لم يتم العثور على مجلد المكتبة.", MB_OK)
+          end
         end
-      end
     end
 
     def self.do_import_skp(path); m=Sketchup.active_model; m.start_operation("Add",true); m.import(path); m.commit_operation; end
