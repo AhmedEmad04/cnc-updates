@@ -1,5 +1,5 @@
 {
-  "version": "2.0.5",
+  "version": "2.0.6",
   "news_id": 1,
   "files_to_update": [
     {
@@ -7,5 +7,5 @@
       "url": "https://raw.githubusercontent.com/AhmedEmad04/cnc-updates/main/main_loader.rb"
     }
   ],
-  "message": "تم إصلاح رابط التحميل."
+  "message": "إصلاح نهائي لرابط التحميل."
 }
