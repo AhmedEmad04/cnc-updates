@@ -1,7 +1,7 @@
 #Encoding: UTF-8
 # ==============================================================================
 # ملف: main_loader.rb
-# (النسخة النهائية: إصلاح مقارنة الإصدار + تطبيق الفصل الذكي والواجهات الاحترافية)
+# (نسخة اختبار الموتور - بدون واجهة تحميل)
 # ==============================================================================
 
 require 'sketchup.rb'
@@ -29,36 +29,16 @@ module ClickAndCut
   UI_HASH = "0b161acf3e2aee885f86bd4799d773b156b2767dcbc83634848136382214c282"
 
   # ==========================================================================
-  # 🔄 وحدة التحديث (Updater Module)
+  # 🔄 وحدة التحديث (Updater Module) - (نسخة مبسطة للاختبار)
   # ==========================================================================
   module Updater
     API_URL = ClickAndCut::UPDATE_API_URL 
     @@restart_required = false
     @@server_data = nil
-    
-    # 🔥 متغيرات الحالة الجديدة للفصل الذكي (Monitor/Thread communication) 🔥
-    @@download_status = { status: :idle, count: 0, total: 0, file: "", error: nil }
-    @@timer_id = nil
 
     def self.is_restart_required?
       @@restart_required
     end
-    
-    # 🔥 دالة المقارنة السليمة للإصدارات (لحل مشكلة عدم اكتشاف التحديث) 🔥
-    def self.version_is_greater?(server_ver, local_ver)
-      # تحويل أجزاء الإصدار لأرقام للمقارنة الدقيقة (2.0.0 vs 2.0.1)
-      s_parts = server_ver.split('.').map(&:to_i)
-      l_parts = local_ver.split('.').map(&:to_i)
-      
-      [s_parts.length, l_parts.length].max.times do |i|
-        s_part = s_parts[i] || 0
-        l_part = l_parts[i] || 0
-        return true if s_part > l_part
-        return false if s_part < l_part
-      end
-      return false
-    end
-
 
     # 1. دالة الفحص
     def self.check_for_update_availability
@@ -86,8 +66,7 @@ module ClickAndCut
         local_ver = ClickAndCut::CURRENT_VERSION.to_s.strip
         
         puts "🔍 Check: Server(#{server_ver}) vs Local(#{local_ver})"
-        # 🔥 تم التعديل: استخدام دالة المقارنة السليمة 🔥
-        return self.version_is_greater?(server_ver, local_ver)
+        return (server_ver > local_ver)
       rescue => e
         puts "❌ Update Error: #{e.message}"
         return false
@@ -103,43 +82,10 @@ module ClickAndCut
       if has_update
         self.show_update_dialog
       else
-        # 🔥 رسالة احترافية 🔥
-        self.show_up_to_date_dialog(ClickAndCut::CURRENT_VERSION)
+        ver = ClickAndCut::CURRENT_VERSION
+        UI.messagebox("✅ نسختك محدثة بالفعل!\n\nالإصدار الحالي: #{ver}", MB_OK)
       end
     end
-    
-    # 2.1. 🔥 نافذة النسخة المحدثة (جديدة) 🔥
-    def self.show_up_to_date_dialog(version)
-        html_content = <<-HTML
-        <!DOCTYPE html>
-        <html dir="rtl">
-        <head>
-          <meta charset="UTF-8">
-          <style>
-            body { font-family: 'Segoe UI', sans-serif; background: #f8f9fa; padding: 20px; text-align: center; }
-            .card { background: #e9f7ef; border-radius: 12px; padding: 30px; box-shadow: 0 4px 15px rgba(0,0,0,0.05); border: 2px solid #2ecc71; }
-            .icon { font-size: 50px; color: #2ecc71; margin-bottom: 10px; }
-            h2 { color: #27ae60; margin-top: 0; }
-            .version-info { font-size: 16px; color: #555; margin: 15px 0; }
-            .btn { padding: 10px 25px; border-radius: 6px; border: none; cursor: pointer; font-weight: bold; background: #27ae60; color: white; margin-top: 15px; }
-          </style>
-        </head>
-        <body>
-          <div class="card">
-            <div class="icon">✔</div>
-            <h2>نسختك محدثة بالكامل!</h2>
-            <div class="version-info">أنت تستخدم أحدث إصدار: <strong>#{version}</strong></div>
-            <button class="btn" onclick="window.location='skp:close_dialog'">إغلاق</button>
-          </div>
-        </body>
-        </html>
-        HTML
-        d = UI::HtmlDialog.new({:dialog_title => "حالة التحديث", :width => 350, :height => 300, :style => UI::HtmlDialog::STYLE_DIALOG})
-        d.set_html(html_content); d.center
-        d.add_action_callback("close_dialog") { d.close }
-        d.show
-    end
-
 
     # 3. نافذة تفاصيل التحديث
     def self.show_update_dialog
@@ -173,7 +119,7 @@ module ClickAndCut
             <div class="desc"><strong>التفاصيل:</strong><br>#{update_msg}</div>
             <div>
               <button class="btn btn-secondary" onclick="window.location='skp:close_dialog'">لاحقاً</button>
-              <button class="btn btn-primary" onclick="window.location='skp:start_download_ui'">تحديث الآن</button>
+              <button class="btn btn-primary" onclick="window.location='skp:start_download_test'">تحديث الآن</button>
             </div>
           </div>
         </body>
@@ -183,180 +129,67 @@ module ClickAndCut
       d = UI::HtmlDialog.new({:dialog_title => "تحديث Click & Cut", :width => 400, :height => 450, :style => UI::HtmlDialog::STYLE_DIALOG})
       d.set_html(html_content); d.center
       d.add_action_callback("close_dialog") { d.close }
-      # 🔥 ربط زر التحديث بنافذة المراقب 🔥
-      d.add_action_callback("start_download_ui") { d.close; self.show_progress_dialog(@@server_data["files_to_update"]) }
+      
+      # هنا التغيير: بدلاً من فتح نافذة تحميل، سنقوم بالتحميل المباشر
+      d.add_action_callback("start_download_test") do 
+        d.close
+        self.perform_simple_download(@@server_data["files_to_update"])
+      end
       d.show
     end
 
-    # 4. 🔥 نافذة التحميل (المراقب UI Monitor) 🔥
-    def self.show_progress_dialog(files_list)
+    # 4. 🔥 التحميل المباشر (بدون جرافيك) للتجربة 🔥
+    def self.perform_simple_download(files_list)
       return unless files_list.is_a?(Array)
-
-      html_content = <<-HTML
-        <!DOCTYPE html>
-        <html dir="rtl">
-        <head>
-          <meta charset="UTF-8">
-          <style>
-            body { font-family: 'Segoe UI', sans-serif; background: #2c3e50; color: white; padding: 20px; text-align: center; display: flex; flex-direction: column; justify-content: center; height: 100vh; box-sizing: border-box; margin: 0; }
-            .loader { border: 5px solid rgba(255,255,255,0.1); border-top: 5px solid #f39c12; border-radius: 50%; width: 50px; height: 50px; animation: spin 1s linear infinite; margin: 0 auto 20px auto; }
-            @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
-            .status-text { font-size: 16px; margin-bottom: 10px; color: #ecf0f1; }
-            .file-name { font-size: 14px; color: #bdc3c7; font-family: monospace; direction: ltr; }
-            .success-icon { font-size: 60px; color: #2ecc71; display: none; margin-bottom: 20px; }
-            .error-icon { font-size: 60px; color: #e74c3c; display: none; margin-bottom: 20px; }
-            .btn-restart { background: #e74c3c; color: white; border: none; padding: 10px 25px; border-radius: 25px; font-weight: bold; cursor: pointer; display: none; margin-top: 20px; }
-            .btn-restart:hover { background: #c0392b; }
-            .btn-close { background: #7f8c8d; color: white; border: none; padding: 10px 25px; border-radius: 25px; font-weight: bold; cursor: pointer; display: none; margin-top: 20px; }
-          </style>
-          <script>
-            function updateStatus(msg, file) {
-               document.getElementById('status').innerText = msg;
-               document.getElementById('filename').innerText = file;
-            }
-            function showSuccess() {
-               document.querySelector('.loader').style.display = 'none';
-               document.querySelector('.success-icon').style.display = 'block';
-               document.getElementById('status').innerText = 'تم التحميل بنجاح!';
-               document.getElementById('filename').innerText = 'يرجى إعادة تشغيل SketchUp';
-               document.querySelector('.btn-restart').style.display = 'inline-block';
-            }
-            function showError(msg) {
-               document.querySelector('.loader').style.display = 'none';
-               document.querySelector('.error-icon').style.display = 'block';
-               document.getElementById('status').innerText = '❌ فشل التحميل';
-               document.getElementById('filename').innerText = msg;
-               document.querySelector('.btn-close').style.display = 'inline-block';
-            }
-          </script>
-        </head>
-        <body>
-          <div class="loader"></div>
-          <div class="success-icon">✔</div>
-          <div class="error-icon">✖</div>
-          <div id="status" class="status-text">جاري الاتصال بالخادم...</div>
-          <div id="filename" class="file-name">...</div>
-          <button class="btn-restart" onclick="window.location='skp:close_and_warn'">إغلاق (إعادة تشغيل)</button>
-          <button class="btn-close" onclick="window.location='skp:close_dialog'">إغلاق</button>
-        </body>
-        </html>
-      HTML
-
-      dlg = UI::HtmlDialog.new({:dialog_title => "جاري التحميل...", :width => 350, :height => 350, :style => UI::HtmlDialog::STYLE_DIALOG})
-      dlg.set_html(html_content); dlg.center
       
-      dlg.add_action_callback("close_and_warn") do
-        dlg.close
-        ClickAndCut::LibraryBrowser.show_restart_required_warning(is_update_finished: true)
+      folder_path = File.dirname(__FILE__)
+      success_count = 0
+      
+      # رسالة تنبيه أن التحميل سيبدأ
+      Sketchup.set_status_text("جاري تحميل التحديثات... يرجى الانتظار")
+      
+      files_list.each do |file_info|
+        file_name = file_info["name"].to_s
+        url_str = file_info["url"].to_s
+        
+        begin
+          next unless url_str.start_with?('http')
+          target_file = File.join(folder_path, "#{file_name}.new")
+          
+          uri = URI(url_str)
+          http = Net::HTTP.new(uri.host, uri.port)
+          http.use_ssl = true
+          http.verify_mode = OpenSSL::SSL::VERIFY_NONE # التصليح موجود هنا
+          
+          req = Net::HTTP::Get.new(uri.request_uri)
+          res = http.request(req)
+
+          if res.code == "200"
+            File.open(target_file, "wb") { |f| f.write(res.body) }
+            success_count += 1
+            puts "✅ Downloaded: #{file_name}"
+          else
+            puts "❌ Failed: #{file_name} (Code: #{res.code})"
+          end
+        rescue => e
+          puts "❌ Error downloading #{file_name}: #{e.message}"
+        end
       end
-      dlg.add_action_callback("close_dialog") { dlg.close }
-      
-      dlg.show
 
-      # 1. تهيئة الحالة والبدء
-      @@download_status = { status: :progress, count: 0, total: files_list.length, file: "جاري التهيئة...", error: nil }
-
-      # 2. إطلاق التحميل الصامت في Thread منفصل
-      Thread.new { self.run_background_download(files_list) }
-      
-      # 3. بدء Timer المراقبة (كل ربع ثانية)
-      @@timer_id = UI.start_timer(0.25, true) do
-        self.check_download_status_and_update_ui(dlg)
+      if success_count > 0
+        @@restart_required = true
+        UI.messagebox("✅ تم تحميل الملفات بنجاح!\n\nعدد الملفات: #{success_count}\nيرجى إغلاق SketchUp تماماً وإعادة تشغيله لتثبيت التحديث.", MB_OK)
+      else
+        UI.messagebox("❌ فشل تحميل الملفات.\nتأكد من اتصال الإنترنت.", MB_OK)
       end
-    end
-    
-    # 4.1. 🔥 دالة التحميل الفعلي الصامت (الكود المُبسط والآمن) 🔥
-    def self.run_background_download(files_list)
-        folder_path = File.dirname(__FILE__)
-        
-        files_list.each_with_index do |file_info, index|
-            file_name = file_info["name"].to_s
-            url_str = file_info["url"].to_s
-            
-            # تحديث الحالة العامة
-            @@download_status[:count] = index + 1
-            @@download_status[:file] = file_name
-
-            begin
-                next unless url_str.start_with?('http')
-                target_file = File.join(folder_path, "#{file_name}.new") 
-                
-                # --- كود التحميل المُبسط والآمن (مع زيادة المهلة ومعالجة التحويل) ---
-                uri = URI(url_str)
-                http = Net::HTTP.new(uri.host, uri.port)
-                http.use_ssl = true
-                http.verify_mode = OpenSSL::SSL::VERIFY_NONE 
-                http.open_timeout = 15 # زيادة المهلة
-                http.read_timeout = 45 # زيادة مهلة القراءة
-                
-                # إرسال الطلب الأولي
-                request = Net::HTTP::Get.new(uri.request_uri)
-                response = http.request(request)
-                
-                # محاولة التحويل لمرة واحدة (لتجنب التجميد في الحلقات المعقدة)
-                if response.is_a?(Net::HTTPRedirection)
-                    redirect_uri = URI(response['location'])
-                    http_redirect = Net::HTTP.new(redirect_uri.host, redirect_uri.port)
-                    http_redirect.use_ssl = true
-                    http_redirect.verify_mode = OpenSSL::SSL::VERIFY_NONE
-                    response = http_redirect.request(Net::HTTP::Get.new(redirect_uri.request_uri))
-                end
-
-                # التحقق من الاستجابة النهائية
-                if response.code == "200"
-                    content = response.body
-                    if content.include?("<!DOCTYPE html>")
-                        raise "الرابط يحتوي على صفحة ويب خطأ"
-                    end
-                    
-                    File.open(target_file, "wb") { |f| f.write(content) }
-                else
-                    raise "خطأ سيرفر: #{response.code}"
-                end
-                # --- نهاية كود التحميل المُبسط والآمن ---
-
-            rescue => e
-                @@download_status = { status: :error, error: "الملف: #{file_name} - الخطأ: #{e.message.gsub("'", "")}" }
-                return # توقف الـ Thread عند الخطأ
-            end
-        end
-
-        # تحديث الحالة النهائية
-        @@download_status = { status: :complete, count: files_list.length, total: files_list.length, file: "" }
-    end
-    
-    # 4.2. دالة المراقبة وتحديث الواجهة (يتم استدعاؤها بواسطة Timer)
-    def self.check_download_status_and_update_ui(dlg)
-        status = @@download_status
-        
-        if status[:status] == :complete
-            UI.stop_timer(@@timer_id)
-            @@timer_id = nil
-            @@restart_required = true
-            dlg.execute_script("showSuccess();")
-        
-        elsif status[:status] == :error
-            UI.stop_timer(@@timer_id)
-            @@timer_id = nil
-            dlg.execute_script("showError('#{status[:error].gsub("'", "\\'")}')")
-
-        elsif status[:status] == :progress
-            if status[:count] > 0
-                msg = "جاري تحميل ملف #{status[:count]} من #{status[:total]}..."
-                dlg.execute_script("updateStatus('#{msg}', '#{status[:file].gsub("'", "\\'")}')")
-            end
-        end
-        
-        unless dlg.visible?
-            UI.stop_timer(@@timer_id) if @@timer_id
-            @@timer_id = nil
-        end
+      
+      Sketchup.set_status_text("")
     end
 
   end
   
   # ==========================================================================
-  # 🔒 وحدة الحماية (Protection Module)
+  # 🔒 وحدة الحماية (بدون تعديل)
   # ==========================================================================
   module Protection
     API_URL = "http://cnc-api.atwebpages.com/cnc_api/check.php"
@@ -528,7 +361,7 @@ module ClickAndCut
   end
 
   # ==========================================================================
-  # 🌍 وحدة المجتمع (Community)
+  # 🌍 وحدة المجتمع (بدون تعديل)
   # ==========================================================================
   module Community
     COMMUNITY_URL = "http://cnc-api.atwebpages.com/cnc_api/community_page.php"
@@ -570,7 +403,7 @@ module ClickAndCut
   end
 
   # ==========================================================================
-  # 📂 وحدة المكتبة (LibraryBrowser)
+  # 📂 وحدة المكتبة (بدون تعديل)
   # ==========================================================================
   module LibraryBrowser
     PLUGIN_DIR = File.dirname(__FILE__).force_encoding("UTF-8")
@@ -584,53 +417,6 @@ module ClickAndCut
     CIPHER_ALGO = 'AES-256-CBC'
     FILE_SECRET_KEY = ["a45df89g7h2j3k4l5m6n7o8p9q0r1s2t3u4v5w6x7y8z9a0b1c2d3e4f5g6h7i8j"].pack('H*') 
     FILE_FIXED_IV = ["f1e2d3c4b5a69788796a5b4c3d2e1f00"].pack('H*')
-    
-    # 4. 🔥 نافذة تحذير إعادة التشغيل (جديدة) 🔥
-    def self.show_restart_required_warning(is_update_finished: false)
-        if is_update_finished
-            message = "تم تحميل التحديثات بنجاح. يجب إغلاق SketchUp تماماً الآن لتثبيت التحديثات النهائية وضمان عمل البرنامج بشكل سليم."
-            title = "✔ عملية التحميل اكتملت"
-            icon = "🎉"
-            btn_text = "حسناً، فهمت"
-            card_style = "border-top: 5px solid #2ecc71;"
-        else
-            message = "تم تحميل تحديثات جديدة مسبقاً. يجب إغلاق SketchUp تماماً وإعادة تشغيله قبل محاولة فتح المكتبة مرة أخرى."
-            title = "⚠️ تنبيه هام: يلزم إعادة تشغيل"
-            icon = "🛑"
-            btn_text = "إغلاق النافذة"
-            card_style = "border-top: 5px solid #e74c3c;"
-        end
-
-        html_content = <<-HTML
-        <!DOCTYPE html>
-        <html dir="rtl">
-        <head>
-          <meta charset="UTF-8">
-          <style>
-            body { font-family: 'Segoe UI', sans-serif; background: #f8f9fa; padding: 20px; text-align: center; }
-            .card { background: white; border-radius: 12px; padding: 30px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); #{card_style} }
-            .icon { font-size: 50px; color: #e74c3c; margin-bottom: 10px; }
-            h2 { color: #2c3e50; margin-top: 0; }
-            .message { font-size: 16px; color: #555; margin: 15px 0 25px 0; line-height: 1.6; }
-            .btn { padding: 10px 25px; border-radius: 6px; border: none; cursor: pointer; font-weight: bold; background: #e74c3c; color: white; }
-          </style>
-        </head>
-        <body>
-          <div class="card">
-            <div class="icon">#{icon}</div>
-            <h2>#{title}</h2>
-            <div class="message">#{message}</div>
-            <button class="btn" onclick="window.location='skp:close_dialog'">#{btn_text}</button>
-          </div>
-        </body>
-        </html>
-        HTML
-
-        d = UI::HtmlDialog.new({:dialog_title => "تحذير إعادة التشغيل", :width => 400, :height => 380, :style => UI::HtmlDialog::STYLE_DIALOG})
-        d.set_html(html_content); d.center
-        d.add_action_callback("close_dialog") { d.close }
-        d.show
-    end
     
     def self.check_integrity(file_path)
         return false unless File.exist?(file_path)
@@ -652,7 +438,7 @@ module ClickAndCut
           end
 
           if ClickAndCut::Updater.is_restart_required?
-             self.show_restart_required_warning 
+             UI.messagebox("⚠️ تنبيه هام ⚠️\n\nتم تحميل تحديثات جديدة.\nيجب إغلاق SketchUp تماماً وإعادة تشغيله.", MB_OK)
              return 
           end
 
