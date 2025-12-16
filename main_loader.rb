@@ -1,6 +1,6 @@
 #Encoding: UTF-8
 # ==============================================================================
-# ملف: main_loader.rb (النسخة الاحترافية - UI + Smart Notify)
+# ملف: main_loader.rb (تم إصلاح زر التحديث)
 # ==============================================================================
 
 require 'sketchup.rb'
@@ -19,16 +19,16 @@ require 'win32/registry'
 module ClickAndCut
 
   # 1. تعريف رقم الإصدار الحالي
-  CURRENT_VERSION = "2.0.1" # تأكد إن ده مطابق لملفك
+  CURRENT_VERSION = "2.0.0" 
   
-  # رابط API (يجب أن يحتوي على news_id للتحكم في الإشعارات)
-  UPDATE_API_URL = "https://raw.githubusercontent.com/AhmedEmad04/cnc-updates/93db76db3e993ae0b5ced7e206f3eb561e229f23/version.json" # عدل الرابط لرابطك الصحيح
+  # رابط API
+  UPDATE_API_URL = "https://raw.githubusercontent.com/AhmedEmad04/cnc-updates/93db76db3e993ae0b5ced7e206f3eb561e229f23/version.json"
 
   # 2. بصمة ملف الواجهة
   UI_HASH = "0b161acf3e2aee885f86bd4799d773b156b2767dcbc83634848136382214c282"
 
   # ==========================================================================
-  # 🔄 وحدة التحديث (Updater Module) - (بواجهة احترافية)
+  # 🔄 وحدة التحديث (Updater Module) - (بواجهة احترافية + إصلاح الزر)
   # ==========================================================================
   module Updater
 
@@ -40,33 +40,59 @@ module ClickAndCut
       @@restart_required
     end
 
-    # دالة الفحص فقط (بدون تحميل)
+    # دالة الفحص (تقوم بتحديث البيانات وتُرجع هل يوجد تحديث أم لا)
     def self.check_for_update_availability
       begin
         uri = URI(API_URL)
-        uri.query = URI.encode_www_form({:nocache => Time.now.to_i})
+        # إضافة رقم عشوائي لمنع الكاش نهائياً
+        uri.query = URI.encode_www_form({:nocache => Time.now.to_i, :rand => rand(1000)})
+        
         response = Net::HTTP.get(uri)
         data = JSON.parse(response)
-        @@server_data = data # حفظ البيانات لاستخدامها لاحقاً
+        @@server_data = data # تحديث البيانات
 
         server_ver = data["version"].to_s.strip
         local_ver = ClickAndCut::CURRENT_VERSION.to_s.strip
 
-        # إرجاع true لو فيه تحديث
         return (server_ver > local_ver)
-      rescue
+      rescue => e
+        puts "ClickAndCut Update Error: #{e.message}"
         return false
+      end
+    end
+
+    # 🔥 دالة جديدة: الفحص اليدوي عند ضغط الزر
+    def self.manual_check_ui
+      # 1. إظهار رسالة صغيرة في الشريط السفلي
+      Sketchup.set_status_text("جاري التحقق من التحديثات...")
+      
+      # 2. إجبار الفحص الآن
+      has_update = self.check_for_update_availability
+      
+      Sketchup.set_status_text("") # مسح الرسالة
+
+      if has_update
+        # لو فيه تحديث، افتح النافذة الشيك
+        self.show_update_dialog
+      else
+        # لو مفيش، طلع رسالة عشان المستخدم يعرف إن الزرار شغال
+        ver = ClickAndCut::CURRENT_VERSION
+        UI.messagebox("✅ نسختك محدثة بالفعل!\n\nالإصدار الحالي: #{ver}\nلا توجد تحديثات جديدة متاحة حالياً.", MB_OK)
       end
     end
 
     # عرض نافذة التحديث الاحترافية
     def self.show_update_dialog
-      return unless @@server_data
+      # لو البيانات مش موجودة (لأي سبب)، نحاول نجيبها تاني
+      unless @@server_data
+         self.check_for_update_availability
+      end
+      
+      return unless @@server_data # لو فشل الاتصال خالص نخرج
 
       server_ver = @@server_data["version"]
-      update_msg = @@server_data["message"] || "تحسينات عامة وإصلاحات للأخطاء."
+      update_msg = @@server_data["message"] || "تحسينات عامة."
       
-      # تصميم النافذة HTML/CSS
       html_content = <<-HTML
         <!DOCTYPE html>
         <html dir="rtl">
@@ -75,10 +101,11 @@ module ClickAndCut
           <style>
             body { font-family: 'Segoe UI', sans-serif; background: #f8f9fa; padding: 20px; text-align: center; overflow: hidden; }
             .update-card { background: white; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); padding: 25px; border: 1px solid #e9ecef; }
-            .icon-box { font-size: 40px; margin-bottom: 10px; }
+            .icon-box { font-size: 40px; margin-bottom: 10px; animation: bounce 2s infinite; }
+            @keyframes bounce { 0%, 100% {transform: translateY(0);} 50% {transform: translateY(-10px);} }
             h2 { margin: 10px 0; color: #2c3e50; }
             .version-badge { background: #e6f7ff; color: #007bff; padding: 4px 10px; border-radius: 20px; font-size: 14px; font-weight: bold; }
-            .desc { color: #6c757d; font-size: 14px; margin: 20px 0; line-height: 1.6; background: #f1f3f5; padding: 15px; border-radius: 8px; text-align: right; }
+            .desc { color: #6c757d; font-size: 14px; margin: 20px 0; line-height: 1.6; background: #f1f3f5; padding: 15px; border-radius: 8px; text-align: right; max-height: 100px; overflow-y: auto; }
             .btn-group { display: flex; gap: 10px; justify-content: center; margin-top: 25px; }
             .btn { padding: 10px 25px; border-radius: 6px; border: none; cursor: pointer; font-weight: bold; font-size: 14px; transition: 0.2s; }
             .btn-primary { background: #27ae60; color: white; }
@@ -93,12 +120,12 @@ module ClickAndCut
             <h2>تحديث جديد متاح!</h2>
             <div><span class="version-badge">إصدار #{server_ver}</span></div>
             <div class="desc">
-              <strong>ما الجديد:</strong><br>
+              <strong>تفاصيل التحديث:</strong><br>
               #{update_msg}
             </div>
             <div class="btn-group">
               <button class="btn btn-secondary" onclick="window.location='skp:close_dialog'">لاحقاً</button>
-              <button class="btn btn-primary" onclick="this.innerText='جاري التحميل...'; this.disabled=true; window.location='skp:start_update'">تحديث الآن</button>
+              <button class="btn btn-primary" onclick="this.innerText='جاري التحضير...'; this.disabled=true; window.location='skp:start_update'">تحديث الآن</button>
             </div>
           </div>
         </body>
@@ -119,59 +146,49 @@ module ClickAndCut
       
       dlg.add_action_callback("start_update") do |ctx|
         dlg.close
-        # بدء عملية التحميل الفعلية
         self.perform_download(@@server_data["files_to_update"])
       end
 
       dlg.show
     end
 
-    # تنفيذ التحميل (الخلفي)
     def self.perform_download(files_list)
       return unless files_list.is_a?(Array)
-
       folder_path = File.dirname(__FILE__)
       success_count = 0
-
-      # شريط تقدم بسيط في الـ Status Bar
-      Sketchup.set_status_text("جاري تحميل تحديثات Click & Cut...")
-
-      files_list.each do |file_info|
-        file_name = file_info["name"].to_s
-        download_link = file_info["url"].to_s
-        
-        next unless download_link.start_with?('http')
-        target_file = File.join(folder_path, "#{file_name}.new") 
-        
-        begin
-          content = Net::HTTP.get(URI(download_link))
-          # حماية من صفحات الخطأ HTML
-          if content.include?("<!DOCTYPE html>") || content.include?("<html")
-             UI.messagebox("خطأ: رابط التحديث غير صالح.")
-             return
-          end
-
-          File.open(target_file, "wb") { |f| f.write(content) }
-          success_count += 1
-        rescue
-          # تجاهل الأخطاء الفردية حالياً
+      
+      # نستخدم Thread عشان الواجهة متهنجش أثناء التحميل
+      Thread.new do
+        files_list.each do |file_info|
+          file_name = file_info["name"].to_s
+          download_link = file_info["url"].to_s
+          
+          next unless download_link.start_with?('http')
+          target_file = File.join(folder_path, "#{file_name}.new") 
+          
+          begin
+            content = Net::HTTP.get(URI(download_link))
+            if content.include?("<!DOCTYPE html>") || content.include?("<html")
+               next 
+            end
+            File.open(target_file, "wb") { |f| f.write(content) }
+            success_count += 1
+          rescue; end
         end
-      end
 
-      Sketchup.set_status_text("") # مسح الشريط
-
-      if success_count > 0
-        @@restart_required = true
-        UI.messagebox("✅ تم تثبيت التحديث بنجاح!\nيرجى إعادة تشغيل SketchUp لتطبيق التغييرات.")
-      else
-        UI.messagebox("❌ فشل الاتصال بالخادم. حاول مرة أخرى لاحقاً.")
+        if success_count > 0
+          @@restart_required = true
+          UI.messagebox("✅ تم تحميل التحديث بنجاح!\n\nيرجى إغلاق SketchUp تماماً وإعادة تشغيله لتثبيت التحديث.")
+        else
+          UI.messagebox("❌ فشل التحميل. تأكد من اتصال الإنترنت.")
+        end
       end
     end
 
   end 
 
   # ==========================================================================
-  # 🔒 وحدة الحماية (Protection Module) - كما هي
+  # 🔒 وحدة الحماية (Protection Module)
   # ==========================================================================
   module Protection
     API_URL = "http://cnc-api.atwebpages.com/cnc_api/check.php"
@@ -348,35 +365,23 @@ module ClickAndCut
   module Community
     COMMUNITY_URL = "http://cnc-api.atwebpages.com/cnc_api/community_page.php"
     
-    # دالة فحص الإشعارات الذكية
     def self.check_notification_status
-      # 1. جلب آخر ID أخبار شافه المستخدم (مخزن في السكتش أب)
       last_seen_id = Sketchup.read_default("ClickAndCut_Pro", "last_seen_news_id", 0).to_i
-      
-      # 2. جلب ID الأخبار الحالي من السيرفر (من نفس ملف version.json)
       server_news_id = 0
       begin
-         # نحاول نجيب الداتا من الكاش بتاع الابديتر لو موجودة
          if ClickAndCut::Updater.class_variable_get(:@@server_data)
            server_news_id = ClickAndCut::Updater.class_variable_get(:@@server_data)["news_id"].to_i
          else
-           # لو مش موجودة نحملها بسرعة
            uri = URI(ClickAndCut::UPDATE_API_URL)
            uri.query = URI.encode_www_form({:nocache => Time.now.to_i})
            data = JSON.parse(Net::HTTP.get(uri))
            server_news_id = data["news_id"].to_i
          end
-      rescue
-         server_news_id = 0
-      end
-
-      # 3. المقارنة: لو السيرفر أكبر، يبقى فيه خبر جديد
+      rescue; server_news_id = 0; end
       return (server_news_id > last_seen_id)
     end
 
-    # دالة فتح المجتمع (وتصفير الإشعارات)
     def self.open_community_window
-      # تحديث الـ ID المحفوظ لآخر نسخة موجودة (عشان اللمبة تطفي)
       begin
          server_data = ClickAndCut::Updater.class_variable_get(:@@server_data)
          if server_data && server_data["news_id"]
@@ -459,27 +464,25 @@ module ClickAndCut
                
                dlg.add_action_callback("requestRootFolders") do |ctx| 
                    self.send_subfolders_to_sidebar(dlg, "") 
-                   
-                   # 🔥 1. إشعار المجتمع الذكي
                    show_news_dot = ClickAndCut::Community.check_notification_status
                    dlg.execute_script("showCommunityNotification(#{show_news_dot});") 
-                   
-                   # 🔥 2. إشعار التحديث
+                   # هنا فقط بنعرض النقطة الحمراء لو فيه تحديث، مش بنفتح النافذة
                    dlg.execute_script("showUpdateNotification(#{has_update});")
                end
 
                dlg.add_action_callback("openCommunityPage") do |ctx|
                    ClickAndCut::Community.open_community_window
-                   # بعد فتح المجتمع، نطفي اللمبة في الواجهة
                    dlg.execute_script("showCommunityNotification(false);") 
                end
 
+               # 🔥🔥 التعديل المهم جداً هنا 🔥🔥
+               # لما المستخدم يدوس، بننادي على دالة الفحص اليدوي manual_check_ui
+               # عشان لو مفيش تحديث، تقوله "أنت محدث"، ولو فيه، تفتح النافذة
                dlg.add_action_callback("checkForUpdatesUI") do |ctx|
-                   # فتح النافذة الاحترافية بدلاً من التحميل الصامت المباشر
-                   ClickAndCut::Updater.show_update_dialog
+                   ClickAndCut::Updater.manual_check_ui
                end
 
-               # بقية الدوال كما هي ...
+               # بقية الدوال
                dlg.add_action_callback("requestSubfolders") { |ctx, rel| self.send_subfolders_to_sidebar(dlg, rel) }
                dlg.add_action_callback("requestNavigate") { |ctx, folder|
                   rel = folder.nil? ? "" : folder
@@ -624,4 +627,3 @@ module ClickAndCut
     end
   end
 end
-
