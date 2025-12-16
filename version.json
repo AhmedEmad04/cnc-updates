@@ -1,5 +1,5 @@
 {
-  "version": "2.0.1",
+  "version": "2.0.2",
   "news_id": 1,
   "files_to_update": [
     {
@@ -7,5 +7,5 @@
       "url": "https://raw.githubusercontent.com/AhmedEmad04/cnc-updates/refs/heads/main/main_loader.rb"
     }
   ],
-  "message": "تحديثات جديدة افضل."
+  "message": "صفحة التحميل الجديدة يارب تشتغل."
 }
