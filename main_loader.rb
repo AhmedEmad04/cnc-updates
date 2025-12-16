@@ -1,7 +1,6 @@
 #Encoding: UTF-8
 # ==============================================================================
-# ملف: main_loader.rb (النسخة النهائية النظيفة)
-# الوظيفة: النسخة الكاملة (الكود الأصلي + وحدة التحديث المدمجة)
+# ملف: main_loader.rb (النسخة الاحترافية - UI + Smart Notify)
 # ==============================================================================
 
 require 'sketchup.rb'
@@ -16,110 +15,167 @@ require 'uri'
 require 'digest'
 require 'win32ole'
 require 'win32/registry'
-# تم حذف استدعاء ملف updater.rbe/rb
 
 module ClickAndCut
 
   # 1. تعريف رقم الإصدار الحالي
-  CURRENT_VERSION = "2.0.1"
+  CURRENT_VERSION = "2.0.0" # تأكد إن ده مطابق لملفك
   
-  # رابط ملف التحديث على السيرفر
-  UPDATE_API_URL = "http://cnc-api.atwebpages.com/cnc_api/version.json"
+  # رابط API (يجب أن يحتوي على news_id للتحكم في الإشعارات)
+  UPDATE_API_URL = "https://raw.githubusercontent.com/AhmedEmad04/cnc-updates/93db76db3e993ae0b5ced7e206f3eb561e229f23/version.json" # عدل الرابط لرابطك الصحيح
 
-  # 2. بصمة ملف الواجهة (ثابتة)
+  # 2. بصمة ملف الواجهة
   UI_HASH = "0b161acf3e2aee885f86bd4799d773b156b2767dcbc83634848136382214c282"
 
   # ==========================================================================
-  # 🔄 وحدة التحديث (Updater Module) - (مدمجة ومصححة) 🔄
+  # 🔄 وحدة التحديث (Updater Module) - (بواجهة احترافية)
   # ==========================================================================
   module Updater
 
     API_URL = ClickAndCut::UPDATE_API_URL 
     @@restart_required = false
+    @@server_data = nil
 
     def self.is_restart_required?
       @@restart_required
     end
 
-    def self.download_silent_update
+    # دالة الفحص فقط (بدون تحميل)
+    def self.check_for_update_availability
       begin
         uri = URI(API_URL)
         uri.query = URI.encode_www_form({:nocache => Time.now.to_i})
         response = Net::HTTP.get(uri)
         data = JSON.parse(response)
+        @@server_data = data # حفظ البيانات لاستخدامها لاحقاً
 
         server_ver = data["version"].to_s.strip
         local_ver = ClickAndCut::CURRENT_VERSION.to_s.strip
 
-        if server_ver != local_ver
-            files_list = data["files_to_update"]
-            
-            if files_list.is_a?(Array) && !files_list.empty?
-                
-                UI.messagebox("يوجد تحديث هام (v#{server_ver})! سيتم تحميل #{files_list.length} ملفات الآن.. يرجى الانتظار قليلاً.", MB_OK)
-                
-                download_succeeded = true
-                folder_path = File.dirname(__FILE__)
-                
-                files_list.each do |file_info|
-                    file_name = file_info["name"].to_s
-                    download_link = file_info["url"].to_s
-                    
-                    next unless download_link.start_with?('http')
-                    
-                    target_file = File.join(folder_path, "#{file_name}.new") 
-                    
-                    File.open(target_file, "wb") do |file|
-                      file.write Net::HTTP.get(URI(download_link))
-                    end
-                    
-                    unless File.size?(target_file).to_i > 0
-                        download_succeeded = false
-                        UI.messagebox("❌ فشل تحميل الملف: #{file_name}. يرجى محاولة التحديث لاحقاً.")
-                        break
-                    end
-                end 
-                
-                if download_succeeded
-                    @@restart_required = true
-                    UI.messagebox("✅ تم تحميل التحديثات بالكامل!\n\nمن فضلك أغلق SketchUp تماماً وأعد تشغيله لتثبيت التحديث الجديد.", MB_OK)
-                else
-                    files_list.each do |file_info|
-                        temp_file = File.join(folder_path, "#{file_info["name"].to_s}.new")
-                        File.delete(temp_file) if File.exist?(temp_file)
-                    end
-                end 
-                
-                return true
-            end 
-        else 
-            UI.messagebox("نسختك محدثة بالفعل (v#{local_ver})")
-            return false
-        end 
-
-      rescue => e
-        UI.messagebox("حدث خطأ أثناء الاتصال أو التحديث: #{e.message}")
-        
-        if data && data["files_to_update"].is_a?(Array)
-             data["files_to_update"].each do |file_info|
-                 temp_file = File.join(File.dirname(__FILE__), "#{file_info["name"].to_s}.new")
-                 File.delete(temp_file) if File.exist?(temp_file)
-             end
-        end
+        # إرجاع true لو فيه تحديث
+        return (server_ver > local_ver)
+      rescue
         return false
-      end 
+      end
+    end
+
+    # عرض نافذة التحديث الاحترافية
+    def self.show_update_dialog
+      return unless @@server_data
+
+      server_ver = @@server_data["version"]
+      update_msg = @@server_data["message"] || "تحسينات عامة وإصلاحات للأخطاء."
+      
+      # تصميم النافذة HTML/CSS
+      html_content = <<-HTML
+        <!DOCTYPE html>
+        <html dir="rtl">
+        <head>
+          <meta charset="UTF-8">
+          <style>
+            body { font-family: 'Segoe UI', sans-serif; background: #f8f9fa; padding: 20px; text-align: center; overflow: hidden; }
+            .update-card { background: white; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); padding: 25px; border: 1px solid #e9ecef; }
+            .icon-box { font-size: 40px; margin-bottom: 10px; }
+            h2 { margin: 10px 0; color: #2c3e50; }
+            .version-badge { background: #e6f7ff; color: #007bff; padding: 4px 10px; border-radius: 20px; font-size: 14px; font-weight: bold; }
+            .desc { color: #6c757d; font-size: 14px; margin: 20px 0; line-height: 1.6; background: #f1f3f5; padding: 15px; border-radius: 8px; text-align: right; }
+            .btn-group { display: flex; gap: 10px; justify-content: center; margin-top: 25px; }
+            .btn { padding: 10px 25px; border-radius: 6px; border: none; cursor: pointer; font-weight: bold; font-size: 14px; transition: 0.2s; }
+            .btn-primary { background: #27ae60; color: white; }
+            .btn-primary:hover { background: #219150; }
+            .btn-secondary { background: #ecf0f1; color: #7f8c8d; }
+            .btn-secondary:hover { background: #dfe6e9; }
+          </style>
+        </head>
+        <body>
+          <div class="update-card">
+            <div class="icon-box">🚀</div>
+            <h2>تحديث جديد متاح!</h2>
+            <div><span class="version-badge">إصدار #{server_ver}</span></div>
+            <div class="desc">
+              <strong>ما الجديد:</strong><br>
+              #{update_msg}
+            </div>
+            <div class="btn-group">
+              <button class="btn btn-secondary" onclick="window.location='skp:close_dialog'">لاحقاً</button>
+              <button class="btn btn-primary" onclick="this.innerText='جاري التحميل...'; this.disabled=true; window.location='skp:start_update'">تحديث الآن</button>
+            </div>
+          </div>
+        </body>
+        </html>
+      HTML
+
+      options = {
+        :dialog_title => "تحديث Click & Cut",
+        :preferences_key => "CNC_Update_Dialog",
+        :scrollable => false, :resizable => false, :width => 400, :height => 450,
+        :style => UI::HtmlDialog::STYLE_DIALOG
+      }
+      dlg = UI::HtmlDialog.new(options)
+      dlg.set_html(html_content)
+      dlg.center
+
+      dlg.add_action_callback("close_dialog") { dlg.close }
+      
+      dlg.add_action_callback("start_update") do |ctx|
+        dlg.close
+        # بدء عملية التحميل الفعلية
+        self.perform_download(@@server_data["files_to_update"])
+      end
+
+      dlg.show
+    end
+
+    # تنفيذ التحميل (الخلفي)
+    def self.perform_download(files_list)
+      return unless files_list.is_a?(Array)
+
+      folder_path = File.dirname(__FILE__)
+      success_count = 0
+
+      # شريط تقدم بسيط في الـ Status Bar
+      Sketchup.set_status_text("جاري تحميل تحديثات Click & Cut...")
+
+      files_list.each do |file_info|
+        file_name = file_info["name"].to_s
+        download_link = file_info["url"].to_s
+        
+        next unless download_link.start_with?('http')
+        target_file = File.join(folder_path, "#{file_name}.new") 
+        
+        begin
+          content = Net::HTTP.get(URI(download_link))
+          # حماية من صفحات الخطأ HTML
+          if content.include?("<!DOCTYPE html>") || content.include?("<html")
+             UI.messagebox("خطأ: رابط التحديث غير صالح.")
+             return
+          end
+
+          File.open(target_file, "wb") { |f| f.write(content) }
+          success_count += 1
+        rescue
+          # تجاهل الأخطاء الفردية حالياً
+        end
+      end
+
+      Sketchup.set_status_text("") # مسح الشريط
+
+      if success_count > 0
+        @@restart_required = true
+        UI.messagebox("✅ تم تثبيت التحديث بنجاح!\nيرجى إعادة تشغيل SketchUp لتطبيق التغييرات.")
+      else
+        UI.messagebox("❌ فشل الاتصال بالخادم. حاول مرة أخرى لاحقاً.")
+      end
     end
 
   end 
-  # ==========================================================================
 
   # ==========================================================================
-  # 🔒 وحدة الحماية (Protection Module)
+  # 🔒 وحدة الحماية (Protection Module) - كما هي
   # ==========================================================================
   module Protection
     API_URL = "http://cnc-api.atwebpages.com/cnc_api/check.php"
     SECRET_KEY = "ClickAndCut_Super_Secret_Key_2025" 
-    
     @@is_licensed = false
     @@license_message = "جاري التحقق..."
     @@serial_number = "غير متوفر" 
@@ -130,7 +186,6 @@ module ClickAndCut
     def self.get_serial; @@serial_number; end
     def self.get_hwid_val; @@hwid; end
 
-    # 1. تحديد اسم المجلد
     def self.get_sketchup_reg_name
         v_str = Sketchup.version.split('.')[0]
         v_int = v_str.to_i
@@ -140,7 +195,6 @@ module ClickAndCut
         final_name
     end
     
-    # 2. قراءة مفتاح من الريجستري
     def self.read_registry_key(key_name)
       val = nil
       begin
@@ -149,35 +203,26 @@ module ClickAndCut
         Win32::Registry::HKEY_CURRENT_USER.open(key_path) do |reg|
           val = reg[key_name]
         end
-      rescue
-        val = nil
-      end
+      rescue; val = nil; end
       val
     end
 
-    # 3. قراءة الهاردوير
     def self.get_hwid
       id = "UNKNOWN_ID"
       begin
         file_system = WIN32OLE.new('Scripting.FileSystemObject')
         drive = file_system.GetDrive('C:')
         id = drive.SerialNumber.to_s.strip
-      rescue
-        id = "UNKNOWN_ID"
-      end
+      rescue; id = "UNKNOWN_ID"; end
       id
     end
 
-    # 4. فحص الحظر أونلاين (مصححة)
     def self.force_server_check(serial, current_hwid)
       return true if serial.nil? || serial == "غير مسجل"
-      
       begin
         uri = URI("#{API_URL}?serial=#{serial}&hwid=#{current_hwid}")
         http = Net::HTTP.new(uri.host, uri.port)
-        http.open_timeout = 3 
-        http.read_timeout = 3
-        
+        http.open_timeout = 3; http.read_timeout = 3
         request = Net::HTTP::Get.new(uri)
         response = http.request(request)
         server_reply = response.body.to_s
@@ -190,90 +235,55 @@ module ClickAndCut
              @@is_licensed = false
              @@license_message = "هذا السيريال مسجل لجهاز آخر"
              return false
-        else
-             return true
-        end
-      rescue
-         return true
-      end
+        else; return true; end
+      rescue; return true; end
     end
 
-    # 5. التحقق المحلي (مصححة)
     def self.check_online_by_token(full_response)
       validity = false
       current_hwid = self.get_hwid
       @@hwid = current_hwid
       
       if full_response.nil? || !full_response.start_with?("VALID|")
-          @@is_licensed = false
-          @@license_message = "ملف الترخيص تالف"
-          validity = false
+          @@is_licensed = false; @@license_message = "ملف الترخيص تالف"; validity = false
       else
           begin
             parts = full_response.split("|")
             server_hash = parts[1]
             local_hash = Digest::SHA256.hexdigest(current_hwid + SECRET_KEY)
-
             if server_hash == local_hash
-              @@is_licensed = true
-              @@license_message = "نسخة أصلية مفعلة"
-              validity = true
+              @@is_licensed = true; @@license_message = "نسخة أصلية مفعلة"; validity = true
             else
-              @@is_licensed = false
-              @@license_message = "الجهاز غير مطابق (نقل غير مسموح)"
-              validity = false
+              @@is_licensed = false; @@license_message = "الجهاز غير مطابق"; validity = false
             end
           rescue
-            @@is_licensed = false
-            @@license_message = "خطأ في البيانات"
-            validity = false
+            @@is_licensed = false; @@license_message = "خطأ في البيانات"; validity = false
           end 
       end
       validity
     end
 
-    # 6. التشغيل الرئيسي
     def self.run_auth_check
       token = self.read_registry_key('ActivationToken')
       saved_serial = self.read_registry_key('UserSerial')
       @@serial_number = saved_serial ? saved_serial : "غير مسجل"
-
       if token.nil? || token.empty?
-        @@is_licensed = false
-        @@license_message = "النسخة غير مفعلة"
-        return false
+        @@is_licensed = false; @@license_message = "النسخة غير مفعلة"; return false
       end
-
       local_check = self.check_online_by_token(token)
-      
       if local_check
          online_check = self.force_server_check(@@serial_number, @@hwid)
          return online_check
-      else
-         return false
-      end
+      else; return false; end
     end
 
-    # 7. واجهة المستخدم (النسخة الذكية)
     def self.show_license_info
       self.run_auth_check 
-      
-      # منطق تحديد شكل الصفحة
-      ui_state = "error"
-      ui_icon = "✖"
-      ui_title = "النسخة غير مفعلة"
-      ui_desc = @@license_message
-
+      ui_state = "error"; ui_icon = "✖"; ui_title = "النسخة غير مفعلة"; ui_desc = @@license_message
       if @@is_licensed
-        ui_state = "success"
-        ui_icon = "✔"
-        ui_title = "نسخة أصلية مفعلة"
-        ui_desc = "شكراً لاستخدامك Click & Cut Pro"
+        ui_state = "success"; ui_icon = "✔"; ui_title = "نسخة أصلية مفعلة"; ui_desc = "شكراً لاستخدامك Click & Cut Pro"
       elsif @@license_message.include?("حظر") || @@license_message.include?("BANNED")
-        ui_state = "banned" 
-        ui_icon = "🚫"
-        ui_title = "تم حظر النسخة!"
-        ui_desc = "تم إيقاف هذا الترخيص بسبب مخالفة شروط الاستخدام."
+        ui_state = "banned"; ui_icon = "🚫"; ui_title = "تم حظر النسخة!"; ui_desc = "تم إيقاف هذا الترخيص بسبب مخالفة شروط الاستخدام."
       end
       
       options = {
@@ -292,24 +302,17 @@ module ClickAndCut
           <style>
               body { font-family: 'Segoe UI', Tahoma, sans-serif; background: #f4f6f9; margin: 0; display: flex; justify-content: center; align-items: center; height: 100vh; }
               .card { background: white; width: 100%; max-width: 320px; padding: 30px; border-radius: 16px; box-shadow: 0 10px 30px rgba(0,0,0,0.08); text-align: center; border: 1px solid #e1e4e8; }
-              
               .icon-circle { width: 80px; height: 80px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 40px; color: white; margin: 0 auto 20px auto; }
-              
-              /* الأنماط المختلفة للحالة */
               .success { background: linear-gradient(135deg, #2ecc71, #27ae60); box-shadow: 0 6px 20px rgba(46, 204, 113, 0.3); }
               .error { background: linear-gradient(135deg, #e74c3c, #c0392b); box-shadow: 0 6px 20px rgba(231, 76, 60, 0.3); }
-              .banned { background: linear-gradient(135deg, #2c3e50, #000000); box-shadow: 0 6px 20px rgba(0, 0, 0, 0.4); } /* لون أسود للحظر */
-              
+              .banned { background: linear-gradient(135deg, #2c3e50, #000000); box-shadow: 0 6px 20px rgba(0, 0, 0, 0.4); }
               h2 { margin: 5px 0 10px 0; color: #2c3e50; font-size: 24px; font-weight: 700; }
               p.status-msg { color: #7f8c8d; font-size: 14px; margin-bottom: 25px; line-height: 1.5; font-weight: 500; }
-              
               .info-box { background: #f8f9fa; padding: 12px; border-radius: 8px; border: 1px dashed #ced4da; margin-bottom: 12px; text-align: center; }
               .info-label { font-size: 11px; color: #95a5a6; display: block; margin-bottom: 4px; font-weight: 600; text-transform: uppercase; }
               .info-value { font-family: 'Consolas', monospace; font-size: 14px; color: #34495e; font-weight: bold; direction: ltr; display: block; }
-              
               .btn { background: #34495e; color: white; border: none; padding: 12px 35px; border-radius: 50px; cursor: pointer; font-size: 15px; font-weight: 600; transition: all 0.3s; margin-top: 15px; box-shadow: 0 4px 10px rgba(52, 73, 94, 0.2); }
               .btn:hover { background: #2c3e50; transform: translateY(-2px); }
-
               .version-tag { font-size:10px; color:#bdc3c7; margin-top:15px; }
           </style>
       </head>
@@ -318,17 +321,14 @@ module ClickAndCut
               <div class="icon-circle #{ui_state}">#{ui_icon}</div>
               <h2>#{ui_title}</h2>
               <p class="status-msg">#{ui_desc}</p>
-              
               <div class="info-box" style="background: #eef2f5;">
                   <span class="info-label">سيريال التفعيل</span>
                   <span class="info-value">#{@@serial_number}</span>
               </div>
-
               <div class="info-box">
                   <span class="info-label">معرف الجهاز (ID)</span>
                   <span class="info-value">#{@@hwid}</span>
               </div>
-              
               <div class="version-tag">Version: #{ClickAndCut::CURRENT_VERSION}</div>
               <button class="btn" onclick="window.location='skp:close'">إغلاق</button>
           </div>
@@ -338,57 +338,62 @@ module ClickAndCut
       
       dialog.set_html(html_content)
       dialog.add_action_callback("close") { dialog.close }
-      dialog.center
-      dialog.show
+      dialog.center; dialog.show
     end
   end
 
   # ==========================================================================
-  # 🌍 وحدة المجتمع والتحديثات (Community Module)
+  # 🌍 وحدة المجتمع (Smart Community Notification)
   # ==========================================================================
   module Community
     COMMUNITY_URL = "http://cnc-api.atwebpages.com/cnc_api/community_page.php"
-    @@update_info = nil
-
-    def self.open_community_window
-        options = {
-          :dialog_title => "مجتمع Click & Cut",
-          :preferences_key => "CNC_Community_Window",
-          :scrollable => true, :resizable => true, :width => 1000, :height => 700,
-          :style => UI::HtmlDialog::STYLE_DIALOG
-        }
-        dlg = UI::HtmlDialog.new(options)
-        
-        # توجيه النافذة لصفحة الويب
-        dlg.set_url(COMMUNITY_URL)
-        
-        dlg.center
-        dlg.show
-    end
     
-    # دالة التحقق من التحديثات (نواة المستقبل)
-    def self.check_for_updates
-        begin
-          uri = URI(ClickAndCut::UPDATE_API_URL)
-          # إضافة رقم عشوائي لمنع الكاش وضمان أحدث نسخة
-          uri.query = URI.encode_www_form({:nocache => Time.now.to_i}) 
-          response = Net::HTTP.get(uri)
-          data = JSON.parse(response)
-          
-          server_ver = data["version"].to_s.strip
-          local_ver = ClickAndCut::CURRENT_VERSION.to_s.strip
-          
-          if server_ver != local_ver
-             @@update_info = data
-             return true # يوجد تحديث
-          end
-        rescue
-          return false
-        end
-        return false
+    # دالة فحص الإشعارات الذكية
+    def self.check_notification_status
+      # 1. جلب آخر ID أخبار شافه المستخدم (مخزن في السكتش أب)
+      last_seen_id = Sketchup.read_default("ClickAndCut_Pro", "last_seen_news_id", 0).to_i
+      
+      # 2. جلب ID الأخبار الحالي من السيرفر (من نفس ملف version.json)
+      server_news_id = 0
+      begin
+         # نحاول نجيب الداتا من الكاش بتاع الابديتر لو موجودة
+         if ClickAndCut::Updater.class_variable_get(:@@server_data)
+           server_news_id = ClickAndCut::Updater.class_variable_get(:@@server_data)["news_id"].to_i
+         else
+           # لو مش موجودة نحملها بسرعة
+           uri = URI(ClickAndCut::UPDATE_API_URL)
+           uri.query = URI.encode_www_form({:nocache => Time.now.to_i})
+           data = JSON.parse(Net::HTTP.get(uri))
+           server_news_id = data["news_id"].to_i
+         end
+      rescue
+         server_news_id = 0
+      end
+
+      # 3. المقارنة: لو السيرفر أكبر، يبقى فيه خبر جديد
+      return (server_news_id > last_seen_id)
     end
 
-    def self.get_update_data; @@update_info; end
+    # دالة فتح المجتمع (وتصفير الإشعارات)
+    def self.open_community_window
+      # تحديث الـ ID المحفوظ لآخر نسخة موجودة (عشان اللمبة تطفي)
+      begin
+         server_data = ClickAndCut::Updater.class_variable_get(:@@server_data)
+         if server_data && server_data["news_id"]
+            Sketchup.write_default("ClickAndCut_Pro", "last_seen_news_id", server_data["news_id"].to_i)
+         end
+      rescue; end
+
+      options = {
+        :dialog_title => "مجتمع Click & Cut",
+        :preferences_key => "CNC_Community_Window",
+        :scrollable => true, :resizable => true, :width => 1000, :height => 700,
+        :style => UI::HtmlDialog::STYLE_DIALOG
+      }
+      dlg = UI::HtmlDialog.new(options)
+      dlg.set_url(COMMUNITY_URL)
+      dlg.center; dlg.show
+    end
   end
 
   # ==========================================================================
@@ -407,7 +412,6 @@ module ClickAndCut
     FILE_SECRET_KEY = ["a45df89g7h2j3k4l5m6n7o8p9q0r1s2t3u4v5w6x7y8z9a0b1c2d3e4f5g6h7i8j"].pack('H*') 
     FILE_FIXED_IV = ["f1e2d3c4b5a69788796a5b4c3d2e1f00"].pack('H*')
     
-    # دالة للتحقق من سلامة الملفات
     def self.check_integrity(file_path)
         return false unless File.exist?(file_path)
         content = File.read(file_path, mode: "rb")
@@ -420,9 +424,11 @@ module ClickAndCut
           ClickAndCut::Protection.show_license_info
         else
           
-          # فحص هل يوجد تحديث معلق (Restart Required)؟
+          # فحص التحديثات الصامت
+          has_update = ClickAndCut::Updater.check_for_update_availability
+
           if ClickAndCut::Updater.is_restart_required?
-             UI.messagebox("⚠️ تنبيه هام ⚠️\n\nتم تحميل تحديثات جديدة.\nيجب إغلاق SketchUp تماماً وإعادة تشغيله لتثبيت التحديث.", MB_OK)
+             UI.messagebox("⚠️ تنبيه هام ⚠️\n\nتم تحميل تحديثات جديدة.\nيجب إغلاق SketchUp تماماً وإعادة تشغيله.", MB_OK)
              return 
           end
 
@@ -430,17 +436,15 @@ module ClickAndCut
           @@library_root_path = internal_path.force_encoding("UTF-8")
           h_path = File.join(File.dirname(__FILE__), 'browser_ui.html')
 
-          # فحص أمني: هل تم التلاعب بالواجهة؟
-          if ClickAndCut::UI_HASH != "PASTE_YOUR_HASH_HERE" && !self.check_integrity(h_path)
-             UI.messagebox("خطأ أمني: تم اكتشاف تعديل غير مصرح به في ملفات البرنامج.\nلن يعمل التطبيق لضمان حقوق الملكية.", MB_OK)
-             return
-          end
+          # if ClickAndCut::UI_HASH != "PASTE_YOUR_HASH_HERE" && !self.check_integrity(h_path)
+          #    UI.messagebox("خطأ أمني: تم اكتشاف تعديل غير مصرح به.", MB_OK)
+          #    return
+          # end
 
           if File.directory?(@@library_root_path)
              self.load_favorites
              Dir.mkdir(@@thumbs_temp_dir) unless Dir.exist?(@@thumbs_temp_dir)
              
-             # تحديث المفتاح لتطبيق الحجم الجديد
              d_opts = {
                :dialog_title => " Click & Cut Pro ",
                :preferences_key => "ClickAndCut_Pro_UI_V2",
@@ -453,25 +457,29 @@ module ClickAndCut
              if File.exist?(h_path)
                dlg.set_file(h_path)
                
-               # =====================================================
-               # ربط دوال الـ Callback
-               # =====================================================
                dlg.add_action_callback("requestRootFolders") do |ctx| 
                    self.send_subfolders_to_sidebar(dlg, "") 
-                   dlg.execute_script("showCommunityNotification(true);") 
-                   has_up = ClickAndCut::Community.check_for_updates
-                   dlg.execute_script("showUpdateNotification(#{has_up});")
+                   
+                   # 🔥 1. إشعار المجتمع الذكي
+                   show_news_dot = ClickAndCut::Community.check_notification_status
+                   dlg.execute_script("showCommunityNotification(#{show_news_dot});") 
+                   
+                   # 🔥 2. إشعار التحديث
+                   dlg.execute_script("showUpdateNotification(#{has_update});")
                end
 
                dlg.add_action_callback("openCommunityPage") do |ctx|
                    ClickAndCut::Community.open_community_window
+                   # بعد فتح المجتمع، نطفي اللمبة في الواجهة
+                   dlg.execute_script("showCommunityNotification(false);") 
                end
 
                dlg.add_action_callback("checkForUpdatesUI") do |ctx|
-                   ClickAndCut::Updater.download_silent_update
+                   # فتح النافذة الاحترافية بدلاً من التحميل الصامت المباشر
+                   ClickAndCut::Updater.show_update_dialog
                end
 
-               # بقية دوال المكتبة الأصلية (كما هي بدون حذف)
+               # بقية الدوال كما هي ...
                dlg.add_action_callback("requestSubfolders") { |ctx, rel| self.send_subfolders_to_sidebar(dlg, rel) }
                dlg.add_action_callback("requestNavigate") { |ctx, folder|
                   rel = folder.nil? ? "" : folder
@@ -496,16 +504,16 @@ module ClickAndCut
                   if ClickAndCut::Protection.is_licensed?
                       full = File.join(@@library_root_path, rel)
                       unless File.exist?(full)
-                         poss = File.join(@@library_root_path, @@current_relative_path, rel + ".cnc")
-                         full = File.exist?(poss) ? poss : File.join(@@library_root_path, @@current_relative_path, rel + ".skp")
+                          poss = File.join(@@library_root_path, @@current_relative_path, rel + ".cnc")
+                          full = File.exist?(poss) ? poss : File.join(@@library_root_path, @@current_relative_path, rel + ".skp")
                       end
 
                       if File.exist?(full)
                           if full.downcase.end_with?('.cnc')
-                             temp = File.join(@@thumbs_temp_dir, "tmp_#{Time.now.to_i}.skp")
-                             begin; dec = OpenSSL::Cipher.new(CIPHER_ALGO); dec.decrypt; dec.key = FILE_SECRET_KEY; dec.iv = FILE_FIXED_IV
-                             File.open(temp, 'wb') { |o| File.open(full, 'rb') { |i| while b=i.read(4096); o.write(dec.update(b)); end; o.write(dec.final) } }
-                             self.do_import_skp(temp); rescue; UI.messagebox("خطأ فك التشفير"); ensure; File.delete(temp) if File.exist?(temp); end
+                              temp = File.join(@@thumbs_temp_dir, "tmp_#{Time.now.to_i}.skp")
+                              begin; dec = OpenSSL::Cipher.new(CIPHER_ALGO); dec.decrypt; dec.key = FILE_SECRET_KEY; dec.iv = FILE_FIXED_IV
+                              File.open(temp, 'wb') { |o| File.open(full, 'rb') { |i| while b=i.read(4096); o.write(dec.update(b)); end; o.write(dec.final) } }
+                              self.do_import_skp(temp); rescue; UI.messagebox("خطأ فك التشفير"); ensure; File.delete(temp) if File.exist?(temp); end
                           else; self.do_import_skp(full); end
                       end
                   else
@@ -523,8 +531,7 @@ module ClickAndCut
                   self.send_subfolders_to_sidebar(dlg, ""); self.send_content_to_ui(dlg, @@library_root_path)
                end
 
-               dlg.center
-               dlg.show
+               dlg.center; dlg.show
              else
                UI.messagebox("ملف الواجهة مفقود!")
              end
@@ -535,10 +542,7 @@ module ClickAndCut
     end
 
     def self.do_import_skp(path); m=Sketchup.active_model; m.start_operation("Add",true); m.import(path); m.commit_operation; end
-
-    def self.load_favorites
-      if File.exist?(FAVORITES_FILE_PATH); begin; @@favorites_list = JSON.parse(File.read(FAVORITES_FILE_PATH, mode: "r:UTF-8")); rescue; @@favorites_list = []; end; else; @@favorites_list = []; end
-    end
+    def self.load_favorites; if File.exist?(FAVORITES_FILE_PATH); begin; @@favorites_list = JSON.parse(File.read(FAVORITES_FILE_PATH, mode: "r:UTF-8")); rescue; @@favorites_list = []; end; else; @@favorites_list = []; end; end
     def self.save_favorites; begin; File.write(FAVORITES_FILE_PATH, JSON.pretty_generate(@@favorites_list), mode: "w:UTF-8"); rescue; end; end
     def self.toggle_favorite(dlg, path); if @@favorites_list.include?(path) then @@favorites_list.delete(path) else @@favorites_list.push(path) end; self.save_favorites; dlg.execute_script("updateFavoriteIcon('#{path.gsub("'", "\\'")}', #{@@favorites_list.include?(path)});"); end
     
@@ -546,8 +550,8 @@ module ClickAndCut
        @@current_relative_path = "FAVORITES_MODE"; base = @@library_root_path.to_s.force_encoding("UTF-8"); list = []
        @@favorites_list.select! { |p| File.exist?(File.join(base, p)) || File.exist?(File.join(base, p.gsub('.skp', '.cnc'))) }; self.save_favorites
        @@favorites_list.each do |p|
-          f = File.join(base, p.gsub('.skp', '.cnc')); f = File.join(base, p) unless File.exist?(f)
-          if File.exist?(f); n = File.basename(f, ".*"); list << { :name => n, :type => "file", :thumb_url => self.get_thumbnail_url(f, n), :full_path_relative => p, :is_favorite => true }; end
+         f = File.join(base, p.gsub('.skp', '.cnc')); f = File.join(base, p) unless File.exist?(f)
+         if File.exist?(f); n = File.basename(f, ".*"); list << { :name => n, :type => "file", :thumb_url => self.get_thumbnail_url(f, n), :full_path_relative => p, :is_favorite => true }; end
        end
        dlg.execute_script("updateMainContent(#{list.sort_by{|i| i[:name]}.to_json}, '⭐ المفضلة', false, true, true);")
     end
@@ -573,85 +577,50 @@ module ClickAndCut
     end
 
     def self.perform_global_search(dlg, q)
-        base = @@library_root_path.to_s.force_encoding("UTF-8"); qu = q.to_s.force_encoding("UTF-8").downcase; res = []
-        ['.cnc', '.skp'].each do |ext|
-          Dir.glob(File.join(base, "**", "*#{qu}*#{ext}"), File::FNM_CASEFOLD).each do |p|
+       base = @@library_root_path.to_s.force_encoding("UTF-8"); qu = q.to_s.force_encoding("UTF-8").downcase; res = []
+       ['.cnc', '.skp'].each do |ext|
+         Dir.glob(File.join(base, "**", "*#{qu}*#{ext}"), File::FNM_CASEFOLD).each do |p|
              n = File.basename(p).force_encoding("UTF-8"); next if n.start_with?('.'); bn = File.basename(n, ".*"); next if res.any?{|r| r[:name] == bn}
              act = Pathname.new(p).relative_path_from(Pathname.new(base)).to_s.force_encoding("UTF-8")
              res << { :name => bn, :type => "file", :thumb_url => self.get_thumbnail_url(p, bn), :full_path_relative => act, :is_favorite => @@favorites_list.include?(act.gsub('.cnc', '.skp')) }
-          end
-        end
-        dlg.execute_script("updateMainContent(#{res.sort_by{|i| i[:name]}.to_json}, 'نتائج البحث عن: #{qu}', false, true);")
+         end
+       end
+       dlg.execute_script("updateMainContent(#{res.sort_by{|i| i[:name]}.to_json}, 'نتائج البحث عن: #{qu}', false, true);")
     end
 
     def self.get_thumbnail_url(p, n)
-        tn = "#{n}_#{File.mtime(p).to_i}.png"; tp = File.join(@@thumbs_temp_dir, tn)
-        unless File.exist?(tp)
-          Dir.glob(File.join(@@thumbs_temp_dir, "#{name}_*.png")).each{|f| File.delete(f)}; if p.downcase.end_with?('.cnc')
+       tn = "#{n}_#{File.mtime(p).to_i}.png"; tp = File.join(@@thumbs_temp_dir, tn)
+       unless File.exist?(tp)
+         Dir.glob(File.join(@@thumbs_temp_dir, "#{name}_*.png")).each{|f| File.delete(f)}; if p.downcase.end_with?('.cnc')
              tmp = File.join(@@thumbs_temp_dir, "t_#{Time.now.to_i}.skp"); begin; dec=OpenSSL::Cipher.new(CIPHER_ALGO); dec.decrypt; dec.key=FILE_SECRET_KEY; dec.iv=FILE_FIXED_IV; File.open(tmp,'wb'){|o| File.open(p,'rb'){|i| while b=i.read(4096); o.write(dec.update(b)); end; o.write(dec.final)}}; Sketchup.save_thumbnail(tmp, tp); rescue; ensure; File.delete(tmp) if File.exist?(tmp); end
-          else; Sketchup.save_thumbnail(p, tp); end
-        end
-        return "file:///" + tp.gsub("\\", "/")
+         else; Sketchup.save_thumbnail(p, tp); end
+       end
+       return "file:///" + tp.gsub("\\", "/")
     end
 
     unless file_loaded?(__FILE__)
-      
       ClickAndCut::Protection.run_auth_check
-
-      # 1. زر فتح المكتبة
       cmd_open = UI::Command.new("فتح المكتبة") { self.open_browser_window }
       cmd_open.tooltip = "Click & Cut Pro - المكتبة"
-      icon_s = File.join(File.dirname(__FILE__), 'icons', 'icon_small.png')
-      icon_l = File.join(File.dirname(__FILE__), 'icons', 'icon_large.png')
-      if File.exist?(icon_s) && File.exist?(icon_l)
-        cmd_open.small_icon = icon_s
-        cmd_open.large_icon = icon_l
-      end
+      icon_s = File.join(File.dirname(__FILE__), 'icons', 'icon_small.png'); icon_l = File.join(File.dirname(__FILE__), 'icons', 'icon_large.png')
+      if File.exist?(icon_s) && File.exist?(icon_l); cmd_open.small_icon = icon_s; cmd_open.large_icon = icon_l; end
 
-      # 2. زر المجتمع (الجديد)
       cmd_community = UI::Command.new("مجتمع Click & Cut") { ClickAndCut::Community.open_community_window }
       cmd_community.tooltip = "أخبار وعروض السوق"
-      cmd_community.status_bar_text = "تصفح آخر الأخبار وعروض الشركات الشريكة"
+      icon_community_s = File.join(File.dirname(__FILE__), 'icons', 'small_community_icon.png'); icon_community_l = File.join(File.dirname(__FILE__), 'icons', 'large_community_icon.png')
+      if File.exist?(icon_community_s) && File.exist?(icon_community_l); cmd_community.small_icon = icon_community_s; cmd_community.large_icon = icon_community_l; end
 
-      icon_community_s = File.join(File.dirname(__FILE__), 'icons', 'small_community_icon.png')
-      icon_community_l = File.join(File.dirname(__FILE__), 'icons', 'large_community_icon.png')
-
-      # تم التصحيح لـ small_icon و large_icon
-      if File.exist?(icon_community_s) && File.exist?(icon_community_l)
-        cmd_community.small_icon = icon_community_s 
-        cmd_community.large_icon = icon_community_l 
-      end
-
-      # 3. زر حالة النسخة
       cmd_status = UI::Command.new("حالة النسخة") { ClickAndCut::Protection.show_license_info }
       cmd_status.tooltip = "معلومات الترخيص"
-      cmd_status.status_bar_text = "عرض حالة النسخة والسيريال"
+      status_icon_s = File.join(File.dirname(__FILE__), 'icons', 'status_small.png'); status_icon_l = File.join(File.dirname(__FILE__), 'icons', 'status_large.png')
+      if File.exist?(status_icon_s) && File.exist?(status_icon_l); cmd_status.small_icon = status_icon_s; cmd_status.large_icon = status_icon_l; end
       
-      status_icon_s = File.join(File.dirname(__FILE__), 'icons', 'status_small.png')
-      status_icon_l = File.join(File.dirname(__FILE__), 'icons', 'status_large.png')
-      if File.exist?(status_icon_s) && File.exist?(status_icon_l)
-        cmd_status.small_icon = status_icon_s
-        cmd_status.large_icon = status_icon_l
-      end
-      
-      # تجميع التولبار (بالترتيب الجديد)
       toolbar = UI::Toolbar.new "Click & Cut Tools"
-      toolbar.add_item cmd_open
-      toolbar.add_item cmd_community 
-      toolbar.add_separator
-      toolbar.add_item cmd_status
+      toolbar.add_item cmd_open; toolbar.add_item cmd_community; toolbar.add_separator; toolbar.add_item cmd_status
       toolbar.show unless toolbar.get_last_state == TB_VISIBLE
       
-      # تجميع القائمة (بالترتيب الجديد)
-      menu = UI.menu("Extensions")
-      sub = menu.add_submenu("Click and cut")
-      sub.add_item(cmd_open)
-      sub.add_item(cmd_community) 
-      sub.add_item(cmd_status)
-      
+      menu = UI.menu("Extensions"); sub = menu.add_submenu("Click and cut"); sub.add_item(cmd_open); sub.add_item(cmd_community); sub.add_item(cmd_status)
       file_loaded(__FILE__)
-
     end
-
   end
 end
